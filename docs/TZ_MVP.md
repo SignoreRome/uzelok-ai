@@ -4,14 +4,14 @@ status: active
 created: 2026-10-30
 updated: 2026-10-30
 tags: [uzelok, project, mvp, tz, architecture, java, spring_boot, telegram, llm, git_sync]
-summary: "ТЗ MVP Uzelok: Telegram → OCR/тезисы → конспект → подтверждение → заметка в Obsidian-совместимой базе; структура приложения, схема БД, деплой, критерии приёмки"
+summary: "ТЗ MVP Uzelok v1.1: Telegram → OCR/тезисы → конспект → подтверждение → заметка в Obsidian-совместимой базе; структура приложения, 14 таблиц, разбор внешнего ревью"
 ---
 
 # ТЗ: Uzelok MVP
 
-Версия 1.0 от 2026-10-30. Основано на спецификации [[Uzelok]] и протоколе консилиума
-[[2026-10-30_MVP_Architecture_Review]] (6 моделей). Документ предназначен для реализации внешним
-агентом-разработчиком и для ревью.
+Версия 1.1 от 2026-10-30 (изменения по внешнему ревью — раздел 18). Основано на спецификации [[Uzelok]] и
+протоколе консилиума [[2026-10-30_MVP_Architecture_Review]] (6 моделей). Документ предназначен для реализации
+внешним агентом-разработчиком и для повторного ревью.
 
 ---
 
@@ -86,8 +86,9 @@ LLM-провайдер (OpenAI-совместимый API), git-репозито
    + `processing_job` в состоянии `RECEIVED`.
 4. Шаг `EXTRACT`: vision-модель возвращает structured output — транскрипцию, тезисы, список неразборчивых
    фрагментов, оценку уверенности. Артефакт `EXTRACTION` пишется в БД и на диск.
-5. Если неразборчивых фрагментов больше порога или уверенность ниже порога — бот показывает их списком
-   с кнопками `[Продолжить как есть]` `[Отправить фото заново]` `[Отмена]`.
+5. Нечитаемые фрагменты и низкая уверенность не создают отдельного шага подтверждения: они показываются
+   в превью (раздел 8.1) вместе с черновиком как предупреждение, решение принимает пользователь
+   (`Сохранить` / `Перегенерировать` / `Отмена`).
 6. Шаг `DRAFT`: текстовая модель получает тезисы + словарь тем + список существующих имён файлов и
    возвращает `{title, type, topic, summary, body_md, confidence}`.
 7. Шаг `RENDER`: детерминированный код собирает frontmatter, имя файла, путь; проверяет тему по словарю,
@@ -133,22 +134,38 @@ LLM-провайдер (OpenAI-совместимый API), git-репозито
 - **FR-4.** Принимаемые входы: текст (до 8000 символов), фото (JPEG/PNG/WebP, до 15 МБ на файл),
   документ `.txt`/`.md` до 1 МБ. Всё остальное отклоняется вежливым сообщением с причиной.
   Проверка MIME — по содержимому (magic bytes), не по расширению; размер проверяется до скачивания.
-- **FR-5.** Альбом (несколько фото с общим `media_group_id`) склеивается в один job: обработка стартует
-  не раньше чем через 1.5 с после последнего апдейта группы.
+- **FR-5.** Каждое вложение сохраняется сразу при получении, до какой-либо склейки: в `source_attachment`
+  пишется строка (файл, MIME, размер, `sha256`, `media_group_id`, `telegram_message_id`) и файл на диск.
+  Альбом — это несколько `source_attachment` с одним `media_group_id` у одного `source_item`; воркер берёт
+  задачу в работу не раньше чем через 2 с после последнего вложения (`processing_job.next_run_at`
+  сдвигается вперёд при каждом новом вложении группы). Буфера в памяти нет: рестарт пода в окне склейки
+  ничего не теряет, а повторная доставка апдейта отбрасывается дедупликацией, потому что вложение уже в БД.
 
 ### Обработка
 
-- **FR-6.** Job проходит состояния `RECEIVED → EXTRACTING → AWAITING_TRANSCRIPT (опционально) → DRAFTING →
-  AWAITING_CONFIRM → WRITING → DONE`, а также `REJECTED`, `CANCELLED`, `FAILED`. Переходы — только через
-  сервисный слой с проверкой текущего состояния (`UPDATE … WHERE status = :expected`); прямое обновление
-  статуса из репозитория запрещено.
-- **FR-7.** Шаги выполняются воркером, который забирает задачи из таблицы `processing_job`
-  (`SELECT … FOR UPDATE SKIP LOCKED`), с lease-таймаутом: job, висящий в промежуточном статусе дольше
-  10 минут, возвращается в очередь.
+- **FR-6.** Job проходит состояния `RECEIVED → EXTRACTING → DRAFTING → AWAITING_CONFIRM → WRITING → DONE`,
+  а также `REJECTED`, `CANCELLED`, `FAILED` (отдельного состояния подтверждения транскрипции нет —
+  нечитаемые фрагменты видны в превью). Переходы — только через сервисный слой с проверкой текущего
+  состояния (`UPDATE … WHERE status = :expected`); прямое обновление статуса из репозитория запрещено.
+  При каждом переходе в новый рабочий статус `lease_until` принудительно сбрасывается в `NULL`, иначе
+  задача будет ждать истечения аренды предыдущего шага.
+- **FR-7.** Обработка шага состоит из трёх фаз и не держит транзакцию на время сети:
+  1) короткая транзакция захвата: `SELECT … FOR UPDATE SKIP LOCKED`, `status = <рабочий>`,
+  `lease_until = now() + 10 min`, коммит;
+  2) вызов LLM и (при необходимости) линтера — **вне транзакции**, соединение в пуле не занято;
+  3) короткая транзакция сохранения артефакта и перехода статуса.
+  Job, висящий в рабочем статусе с истёкшим `lease_until`, возвращается в очередь с `attempt_count + 1`.
+  Ни один HTTP-вызов или процесс линтера не выполняется внутри открытой транзакции.
 - **FR-8.** Каждый шаг сохраняет результат в `job_artifact` до перехода к следующему шагу. Повторный запуск
   job не выполняет шаг, у которого есть артефакт, кроме случая явной перегенерации.
-- **FR-9.** Вызов LLM идемпотентен по `request_key = sha256(вход + model + prompt_version)`; при наличии
-  успешного `llm_call` с тем же ключом повторный вызов не выполняется, используется сохранённый ответ.
+- **FR-9.** Вызов LLM идемпотентен по
+  `request_key = sha256(step | input_hash | model | prompt_version | draft_version)`, где `draft_version` —
+  номер версии артефакта черновика (1 для первого прогона, 2+ для перегенераций). При наличии успешного
+  `llm_call` с тем же ключом повторный вызов не выполняется, используется сохранённый ответ; нажатие
+  «Перегенерировать» всегда создаёт новый ключ и не возвращает закэшированный черновик.
+- **FR-9a.** Артефакт `EXTRACTION` (транскрипция + тезисы) сохраняется для всех типов входа, включая
+  текстовый: тезисы текстового сообщения — такой же артефакт, как и распознанные с фото, иначе перегенерация
+  и будущие карточки FSRS останутся без источника.
 - **FR-10.** Изображения и промежуточные артефакты хранятся на диске (`/var/lib/uzelok/artifacts/...`),
   в БД — путь, хеш и метаданные. Бинарные данные в БД не пишутся.
 
@@ -159,15 +176,21 @@ LLM-провайдер (OpenAI-совместимый API), git-репозито
 - **FR-12.** Конспект генерируется вторым вызовом модели для фото и первым для текста. Модель обязана
   вернуть structured output строго по схеме раздела 8; свободный текст как контракт не принимается.
 - **FR-13.** Frontmatter, имя файла, путь и `id` формирует код, а не модель. Модель предлагает `title`,
-  `type`, `topic`, `summary`, `body_md`, `confidence`. `topic` валидируется по словарю базы; отсутствие
-  темы в словаре → путь `_Inbox` либо отказ (см. FR-15).
+  `type`, `topic`, `summary`, `body_md`, `confidence`. `topic` валидируется по словарю базы.
 - **FR-14.** Детерминированные правила рендера: имя файла `Title_Case_With_Underscores` (только
   `[A-Za-z0-9_]`, латиница; при кириллическом заголовке — транслитерация), длина ≤ 80 символов; путь
-  `<domain-folder>/<topic-folder>/<Name>.md` по словарю; коллизия имени — не автосуффикс, а перевод в
-  `_Inbox` с пометкой в превью.
-- **FR-15.** Проверки перед записью: тема есть в словаре, имя уникально (по `git ls-files` базы, не по
-  файловой системе), frontmatter валиден, линтер базы проходит на временной копии. Любая неуспешная
-  проверка → job остаётся в `AWAITING_CONFIRM` с блокирующей причиной в превью; запись запрещена.
+  `<domain-folder>/<topic-folder>/<Name>.md` по словарю.
+  **Тема не найдена в словаре** → заметка не блокируется, а уходит в `_Inbox/` с предупреждением в превью
+  («тема не распознана, сохраню во входящие»); пользователь может указать тему реплаем, и рендер повторится.
+  **Коллизия имени** → заметка уходит в `_Inbox/<Name>_<YYYY-MM-DD>_<job8>.md`, где `job8` — первые 8 символов
+  `job.id`; суффикс детерминирован (тот же job при повторе даёт то же имя), показан в превью. Молчаливая
+  замена имени без суффикса запрещена.
+- **FR-15.** Проверка уникальности имени выполняется по всей базе, а не только по целевой папке, и без учёта
+  регистра: сравнивается объединение `git ls-files` (отслеживаемые файлы) и обхода рабочего дерева
+  (`Files.walk` — ловит untracked). Нормализация — `lower(Locale.ROOT)`. Блокирующими для записи остаются
+  только три причины: (а) имя занято и суффикс из FR-14 не применим, (б) frontmatter или тело не проходят
+  валидатор/линтер, (в) итоговый путь выходит за корень базы. Всё остальное (неизвестная тема, низкая
+  уверенность, найденные небезопасные блоки) — предупреждение в превью, не блокировка.
 
 ### Подтверждение и запись
 
@@ -176,12 +199,21 @@ LLM-провайдер (OpenAI-совместимый API), git-репозито
   путь, тема и краткое summary.
 - **FR-17.** Кнопки передают непрозрачный одноразовый токен (`pending_action.token`), а не `job_id`
   и не путь; токен привязан к `chat_id`, сообщению, job и имеет срок жизни 24 часа.
-- **FR-18.** Запись файла атомарна: `.tmp` в том же каталоге + `ATOMIC_MOVE`. Для внутренней базы после
-  записи — коммит с сообщением `note: <Title> (<job-id>)` и трейлером `Uzelok-Job: <uuid>`; повтор с тем же
-  `content_hash` коммит не создаёт.
+- **FR-18.** Запись файла атомарна: временный файл создаётся в скрытом каталоге `<root>/.uzelok-tmp/`
+  (та же файловая система, имя `.<Name>.<job8>.tmp`), затем `Files.move(..., ATOMIC_MOVE)` в целевой путь.
+  Каталог `.uzelok-tmp/` должен быть в `.gitignore` базы — это проверяется при регистрации базы и
+  сообщается пользователю, если строки нет (сервис не правит `.gitignore` сам). Перед перемещением
+  проверяется отсутствие `<root>/.git/index.lock`: если файл есть, идёт чужая git-операция — пауза и повтор
+  через 2 с (до 5 раз), затем `FAILED` с понятной причиной.
+  Идемпотентность записи: если целевой файл уже существует и его `sha256` совпадает с расчётным, запись
+  считается успешной (`note` обновляется, коммит не создаётся). Для внутренней базы после записи — коммит
+  с сообщением `note: <Title> (<job-id>)` и трейлером `Uzelok-Job: <uuid>`.
 - **FR-19.** Для внешней базы сервис не делает `git commit` и не вызывает `git pull` — только пишет файл
-  в рабочее дерево; коммит и push выполняет внешний процесс синхронизации. Сервис обязан использовать
-  блокировку записи в пределах своей базы (`SELECT … FOR UPDATE` по строке `knowledge_base`).
+  в рабочее дерево; коммит и push выполняет внешний процесс синхронизации. Взаимное исключение записей
+  обеспечивается внутрипроцессным `ReentrantLock` по `knowledge_base.id` (сервис работает в одном поде,
+  `replicas: 1` — это инвариант деплоя, см. NFR-4); блокировка строки `knowledge_base` в БД для MVP не
+  используется, чтобы пакеты `knowledge`/`pipeline` не зависели от JDBC. Появление второй реплики требует
+  замены лока на порт с распределённой блокировкой — это записано в разделе 17.
 - **FR-20.** После `DONE` в чат приходит подтверждение с относительным путём файла и темой; в `audit_event`
   пишется `note_saved` с `note_id`, хешем и (если есть) commit sha.
 
@@ -204,8 +236,9 @@ LLM-провайдер (OpenAI-совместимый API), git-репозито
   Ожидание LLM не блокирует поток опроса Telegram.
 - **NFR-3. Стоимость.** Одна заметка ≤ $0.05 при списании по тарифу провайдера; стоимость каждого вызова
   фиксируется в `llm_call`.
-- **NFR-4. Надёжность.** Рестарт пода в любом состоянии не теряет job и не создаёт дубль заметки.
-  Повторный `kill -9` посреди шага — тот же инвариант.
+- **NFR-4. Надёжность.** Сервис работает в одном поде (`replicas: 1`): второй под ломает Long Polling
+  (409 на `getUpdates`) и внутрипроцессную блокировку записи. Рестарт пода в любом состоянии не теряет
+  job и не создаёт дубль заметки. Повторный `kill -9` посреди шага — тот же инвариант.
 - **NFR-5. Приватность.** Содержимое конспектов и фото не пишутся в логи и не уходят никуда, кроме
   выбранного LLM-провайдера и базы знаний пользователя. Логи содержат только идентификаторы, статусы,
   длительности, токены и стоимость.
@@ -264,7 +297,7 @@ flowchart LR
 | :--- | :--- |
 | Java | 25 (LTS), toolchain в Gradle |
 | Spring Boot | 4.1.2 |
-| Spring AI | 2.0.2 (`spring-ai-starter-model-openai`, `spring-ai-starter-model-anthropic`) |
+| Spring AI | 2.0.2 (`spring-ai-starter-model-openai`; стартер Anthropic не нужен — и OpenRouter, и OpenCode Go работают через OpenAI-совместимый API) |
 | Telegram Bots | `org.telegram:telegrambots-longpolling` + `telegrambots-client` 10.3.0 |
 | PostgreSQL driver | `org.postgresql:postgresql` (управляется Boot BOM) |
 | Flyway | 11.x (`flyway-core`, `flyway-database-postgresql`) |
@@ -308,6 +341,7 @@ uzelok-ai/
     │   │   │   │   ├── KnowledgeBase.java          # id, kind, rootPath, taxonomyRelPath, inboxRelPath
     │   │   │   │   ├── KnowledgeBaseKind.java      # EXTERNAL_OBSIDIAN | INTERNAL_GIT
     │   │   │   │   ├── SourceItem.java
+    │   │   │   │   ├── SourceAttachment.java       # вложение альбома: fileId, mime, size, sha256, mediaGroupId
     │   │   │   │   ├── ProcessingJob.java
     │   │   │   │   ├── JobStatus.java              # enum состояний из FR-6
     │   │   │   │   ├── JobArtifact.java
@@ -317,7 +351,7 @@ uzelok-ai/
     │   │   │   │   ├── Note.java
     │   │   │   │   ├── Taxonomy.java               # domains → topics, folder(), topicFolder()
     │   │   │   │   ├── TopicRef.java
-    │   │   │   │   └── NoteType.java               # concept | problem | source_note | research | snippet | protocol
+    │   │   │   │   └── NoteType.java               # только создаваемые сервисом: concept | problem | source_note
     │   │   │   ├── port/
     │   │   │   │   ├── KnowledgeStore.java         # prepare(draft) → RenderedNote | violations; write(note)
     │   │   │   │   ├── TaxonomyReader.java
@@ -345,12 +379,17 @@ uzelok-ai/
     │   │   │   ├── step/WriteStep.java
     │   │   │   └── ArtifactService.java
     │   │   ├── knowledge/
-    │   │   │   ├── NoteRenderer.java               # frontmatter + имя + путь
+    │   │   │   ├── NoteRenderer.java               # frontmatter (YAML-сериализатор) + имя + путь
     │   │   │   ├── FileNamePolicy.java             # Title_Case, транслитерация, лимит длины
+    │   │   │   ├── InboxNaming.java                # суффикс _YYYY-MM-DD_job8 при коллизии
+    │   │   │   ├── ContentSanitizer.java           # запрет dataview/dataviewjs/templater-блоков и <% %>
     │   │   │   ├── TaxonomyLoader.java             # YAML → Taxonomy
+    │   │   │   ├── FsTaxonomyReader.java           # реализация TaxonomyReader: файл с диска, не БД
     │   │   │   ├── ContractValidator.java          # правила хранилища
-    │   │   │   ├── LinterRunner.java               # вызов линтера базы (команда из конфига профиля)
+    │   │   │   ├── LinterRunner.java               # опциональный внешний линтер базы (команда из конфига)
     │   │   │   ├── GitIndex.java                   # ls-files по базе
+    │   │   │   ├── NameUniqueness.java             # git ls-files ∪ Files.walk, case-insensitive
+    │   │   │   ├── VaultLockRegistry.java          # ReentrantLock по knowledge_base.id
     │   │   │   ├── VaultTemplate.java              # создание внутренней базы из шаблона
     │   │   │   ├── ExternalObsidianStore.java      # реализация KnowledgeStore
     │   │   │   └── InternalGitStore.java           # реализация KnowledgeStore
@@ -359,7 +398,7 @@ uzelok-ai/
     │   │   │   ├── UpdateRouter.java               # message | callback → handler
     │   │   │   ├── MessageHandler.java
     │   │   │   ├── CallbackHandler.java
-    │   │   │   ├── MediaGroupBuffer.java
+    │   │   │   ├── AttachmentReceiver.java        # приём и немедленное сохранение вложений (без буфера в памяти)
     │   │   │   ├── FileDownloader.java
     │   │   │   ├── PreviewComposer.java
     │   │   │   ├── StatusMessage.java              # throttle правок
@@ -374,9 +413,9 @@ uzelok-ai/
     │   │   ├── persistence/
     │   │   │   ├── JdbcJobRepository.java
     │   │   │   ├── JdbcSourceItemRepository.java
+    │   │   │   ├── JdbcAttachmentRepository.java
     │   │   │   ├── JdbcNoteRepository.java
     │   │   │   ├── JdbcTenantRepository.java
-    │   │   │   ├── JdbcTaxonomyReader.java
     │   │   │   ├── JdbcAuditRepository.java
     │   │   │   └── JdbcLlmCallRepository.java
     │   │   └── config/
@@ -542,14 +581,25 @@ CREATE TABLE source_item (
     chat_id              bigint NOT NULL,
     telegram_message_id  bigint NOT NULL,
     kind                 text NOT NULL CHECK (kind IN ('TEXT','PHOTO','DOCUMENT','TOPIC')),
+    media_group_id       text,
     text_body            text,
+    created_at           timestamptz NOT NULL DEFAULT now(),
+    UNIQUE (chat_id, telegram_message_id)
+);
+
+-- Вложения: один source_item → N файлов (альбом из нескольких фото).
+CREATE TABLE source_attachment (
+    id                   uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    source_item_id       uuid NOT NULL REFERENCES source_item(id) ON DELETE CASCADE,
+    tenant_id            uuid NOT NULL REFERENCES tenant(id),
+    position             int NOT NULL,
     telegram_file_id     text,
     file_path            text,
     mime                 text,
     byte_size            bigint,
     sha256               text,
     created_at           timestamptz NOT NULL DEFAULT now(),
-    UNIQUE (chat_id, telegram_message_id)
+    UNIQUE (source_item_id, position)
 );
 
 CREATE TABLE processing_job (
@@ -568,8 +618,8 @@ CREATE TABLE processing_job (
     confirmed_at       timestamptz,
     created_at         timestamptz NOT NULL DEFAULT now(),
     updated_at         timestamptz NOT NULL DEFAULT now(),
-    CHECK (status IN ('RECEIVED','EXTRACTING','AWAITING_TRANSCRIPT','DRAFTING',
-                      'AWAITING_CONFIRM','WRITING','DONE','REJECTED','CANCELLED','FAILED'))
+    CHECK (status IN ('RECEIVED','EXTRACTING','DRAFTING','AWAITING_CONFIRM',
+                      'WRITING','DONE','REJECTED','CANCELLED','FAILED'))
 );
 
 CREATE INDEX processing_job_queue_idx ON processing_job (status, next_run_at);
@@ -577,6 +627,8 @@ CREATE INDEX processing_job_queue_idx ON processing_job (status, next_run_at);
 CREATE TABLE job_artifact (
     id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     job_id          uuid NOT NULL REFERENCES processing_job(id) ON DELETE CASCADE,
+    -- каскад оставлен намеренно: сервис в MVP не удаляет job, а аудит живёт в audit_event;
+    -- если появится удаление задач, каскад пересмотреть (иначе артефакты уедут вместе с job)
     tenant_id       uuid NOT NULL REFERENCES tenant(id),
     kind            text NOT NULL CHECK (kind IN ('ORIGINAL','EXTRACTION','DRAFT_JSON','RENDERED_MD','LINT_REPORT')),
     version         int NOT NULL DEFAULT 1,
@@ -610,6 +662,7 @@ CREATE TABLE note (
 CREATE TABLE note_version (
     id             uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     note_id        uuid NOT NULL REFERENCES note(id) ON DELETE CASCADE,
+    tenant_id      uuid NOT NULL REFERENCES tenant(id),
     version_no     int NOT NULL,
     markdown       text NOT NULL,
     content_hash   text NOT NULL,
@@ -703,11 +756,21 @@ summary: "одно предложение до 150 символов"
 1. Тема из словаря → папка `<domain>/<topic>` строго как в `taxonomy.yaml`; новых папок сервис не создаёт.
 2. Имя файла: латиница `Title_Case_With_Underscores`, ≤ 80 символов, уникально по всей базе (проверка
    по `git ls-files`).
-3. Тема не найдена или уверенность модели ниже порога → `_Inbox/<Name>.md` (если имя занято — отказ).
+3. Тема не найдена или уверенность модели ниже порога → `_Inbox/<Name>.md` (если имя занято — суффикс
+   `_<YYYY-MM-DD>_<job8>` по FR-14, а не отказ).
 4. Отказ от записи вместо «умного» доисправления: любые сомнения показываются пользователю.
 5. Линтер базы прогоняется на временной копии каталога до записи; код возврата ≠ 0 → запись запрещена,
-   пользователю показывается причина.
+   пользователю показывается причина. Если `lint-command` не задан, работает Java-валидатор, а его
+   паритет с линтером базы подтверждается тестом на фикстурах (раздел 15).
 6. Существующие файлы не изменяются и не удаляются. Внешняя база: сервис только добавляет файл.
+7. Frontmatter сериализуется библиотечным YAML-сериализатором (без ручной склейки строк), значения
+   экранируются, многострочный `summary` складывается в одну строку до 150 символов.
+8. Тело заметки проходит `ContentSanitizer`: блоки ` ```dataview `, ` ```dataviewjs `, ` ```templater `,
+   конструкции `<% %>`, HTML-`<script>` и inline-JS-ссылки `javascript:` удаляются и заменяются текстовой
+   пометкой; пользователь видит предупреждение в превью. Причина: Obsidian-плагины исполняют такой код
+   при открытии заметки.
+9. Временные файлы создаются только в `<root>/.uzelok-tmp/`; отсутствие этого пути в `.gitignore`
+   выводится предупреждением при регистрации базы (сервис `.gitignore` не изменяет).
 
 ---
 
@@ -716,9 +779,7 @@ summary: "одно предложение до 150 символов"
 | Из | В | Условие |
 | :--- | :--- | :--- |
 | RECEIVED | EXTRACTING | job забран воркером, есть входные данные |
-| EXTRACTING | AWAITING_TRANSCRIPT | есть `unclear_spans` сверх порога |
 | EXTRACTING | DRAFTING | артефакт EXTRACTION сохранён |
-| AWAITING_TRANSCRIPT | DRAFTING | пользователь нажал «Продолжить» или прислал исправление |
 | DRAFTING | AWAITING_CONFIRM | артефакты DRAFT_JSON и RENDERED_MD сохранены, проверки пройдены |
 | AWAITING_CONFIRM | DRAFTING | «Перегенерировать» (новый prompt_version) |
 | AWAITING_CONFIRM | WRITING | «Сохранить» (или «В _Inbox» → флаг forceInbox) |
@@ -732,11 +793,13 @@ summary: "одно предложение до 150 символов"
 
 - Один `source_item` → один `processing_job` (`UNIQUE(source_item_id)`).
 - Один `note.id` ↔ один файл; повторная запись с тем же `content_hash` — no-op.
-- `llm_call.request_key` уникален: `sha256(step|input_sha256|model|prompt_version)`.
+- `llm_call.request_key` уникален: `sha256(step|input_sha256|model|prompt_version|draft_version)`.
 - Переход статуса — `UPDATE processing_job SET status = :to WHERE id = :id AND status = :from`;
   0 строк → переход отклонён (конкурентный обработчик уже сдвинул состояние).
-- Lease: воркер ставит `lease_until = now() + 10 min`; задача с истёкшим lease и промежуточным статусом
-  возвращается в очередь с `attempt_count + 1`.
+- Lease: воркер ставит `lease_until = now() + 10 min` при захвате и **обнуляет его при каждом переходе**
+  в новый статус; задача с истёкшим lease и рабочим статусом возвращается в очередь с `attempt_count + 1`.
+- Транзакция не держится на время сетевых вызовов: захват и сохранение артефакта — короткие транзакции,
+  вызов модели и линтер — между ними, вне транзакции.
 
 ---
 
@@ -782,18 +845,28 @@ uzelok:
     poll-timeout-seconds: 30
     media-group-window-ms: 1500
   llm:
-    provider: openrouter            # openrouter | opencode-go
-    base-url: ${UZELOK_LLM_BASE_URL}
-    api-key: ${UZELOK_LLM_API_KEY}
-    vision-model: claude-haiku-5-5
-    vision-fallback-model: gemini-4-argon
-    text-model: deepseek-v4.1-flash
+    providers:
+      openrouter:
+        base-url: https://openrouter.ai/api/v1
+        api-key: ${UZELOK_OPENROUTER_API_KEY}
+      opencode-go:
+        base-url: https://opencode.ai/zen/go/v1
+        api-key: ${UZELOK_OPENCODE_API_KEY}
+    steps:
+      extract:
+        provider: openrouter
+        model: anthropic/claude-haiku-5-5        # id + префикс провайдера — как в его каталоге
+        fallback-model: google/gemini-4-argon
+      draft:
+        provider: opencode-go
+        model: deepseek-v4.1-flash
     prompt-version: v1
     daily-budget-usd: 2.00
     timeout-seconds: 120
   knowledge:
-    lint-command: /home/roman/.hermes/scripts/agora_lint.py
-    lint-timeout-seconds: 60
+    lint-command: ""                # пусто = только Java-валидатор; для Agora: /home/roman/.hermes/scripts/agora_lint.py
+    lint-parity-fixtures: src/test/resources/lint-fixtures
+    tmp-dir: .uzelok-tmp            # скрытый каталог внутри корня базы, должен быть в .gitignore
     confidence-threshold: 0.55
     max-title-length: 80
   worker:
@@ -845,6 +918,14 @@ uzelok:
 7. `UpdateRouterTest` — дубль `update_id`, чужой `chatId`, чужой callback, повторное нажатие кнопки.
 8. `StructuredOutputTest` — фикстуры ответов моделей, включая неполный JSON и `topic` вне словаря.
 9. `LayerRulesTest` (ArchUnit) — правила раздела 7.1.
+10. `AlbumRestartTest` — альбом из 3 фото, рестарт пода между вложениями: все 3 вложения в БД, один job,
+    потерянных файлов нет.
+11. `LintParityTest` — корпус фикстур прогоняется через Java-валидатор и через реальный линтер базы
+    (если он доступен), вердикты должны совпадать; расхождение — падение теста.
+12. `NameUniquenessTest` — коллизия с учётом регистра в другой папке, untracked-файл, кириллический
+    заголовок, суффикс `_Inbox`.
+13. `ContentSanitizerTest` — dataview/dataviewjs/templater/`<% %>`/`<script>` вырезаются и попадают
+    в предупреждения превью.
 
 ### Definition of Done
 
@@ -866,7 +947,7 @@ uzelok:
    логирования, ArchUnit-тест (может быть с пустыми правилами).
 2. `knowledge`: `TaxonomyLoader`, `FileNamePolicy`, `NoteRenderer`, `ContractValidator`, `LinterRunner`,
    `ExternalObsidianStore` + тесты на копии базы. Критерий: валидный файл на копии, линтер 0.
-3. `telegram`: poller, whitelist, приём текста/фото, `MediaGroupBuffer`, `StatusMessage`, дедуп апдейтов,
+3. `telegram`: poller, whitelist, приём текста/фото, `AttachmentReceiver`, `StatusMessage`, дедуп апдейтов,
    создание `source_item` + `processing_job`. LLM на этом шаге — заглушка, отдающая фиктивный `NoteDraft`.
 4. `llm` + `pipeline`: `ExtractionClient`, `DraftClient`, схемы, `JobWorker` со шагами и lease;
    превью, кнопки, `pending_action`, запись.
@@ -886,8 +967,58 @@ uzelok:
    хелперы)? Какие правила добавить?
 5. Корректна ли схема БД для будущего FSRS (`note.id` + артефакт тезисов) без отдельной таблицы карточек?
 6. Что в MVP можно вырезать ещё, без потери ценности «материал → валидная заметка»?
+7. (v1.1) Достаточно ли суффикса `_<YYYY-MM-DD>_<job8>` для файлов в `_Inbox`, или он должен зависеть только
+   от `job.id`, чтобы повторный прогон давал то же имя при смене даты?
+8. (v1.1) Не слишком ли дорого держать паритет двух валидаторов (Java + внешний линтер)? Какие правила
+   достаточно оставить только в Java?
 
 ---
+
+## 18. Изменения по внешнему ревью (v1.1)
+
+Ревью получено 2026-10-30. Ниже — решение по каждому пункту. Спорные пункты проверены по схеме БД,
+коду конфигурации и фактическому поведению внешних систем.
+
+| № | Замечание ревьюера | Вердикт | Что изменено |
+| :--- | :--- | :--- | :--- |
+| 1 | Коллизия имён при сбросе в `_Inbox` против `UNIQUE(file_name)` | принято | FR-14: детерминированный суффикс `_<YYYY-MM-DD>_<job8>`; 10.3 п. 3 |
+| 2 | Транзакция БД удерживается на время вызова LLM | принято | FR-7: три фазы (захват → вызов вне транзакции → сохранение), явный запрет сети в транзакции |
+| 3 | `lease_until` не сбрасывается при смене статуса | принято | FR-6 и раздел 11: сброс в `NULL` при каждом переходе |
+| 4 | Блокировка строки `knowledge_base` конфликтует с ArchUnit | принято с правкой | FR-19: `ReentrantLock` по `knowledge_base.id`, `replicas: 1` зафиксирован как инвариант; распределённая блокировка — при появлении второй реплики |
+| 5 | Потеря фото альбома при рестарте в окне склейки | принято | FR-5: вложения пишутся в `source_attachment` сразу, без буфера в памяти, `next_run_at` сдвигается на 2 с |
+| 6 | Противоречие FR-15 и п. 10.3 по неизвестной теме | принято | FR-13/14/15: неизвестная тема — не блокер, а `_Inbox` + предупреждение в превью |
+| 7 | `JdbcTaxonomyReader` — фантомный класс (словарь только в YAML) | принято | Удалён из дерева, добавлен `knowledge.FsTaxonomyReader` |
+| 8 | Лишний стартер Anthropic | принято | 6.3: только `spring-ai-starter-model-openai` |
+| 9 | Несогласованные имена моделей и провайдер | принято | 13.1: блоки `providers` + `steps` с провайдером и полным id модели |
+| 10 | Шесть типов заметок вместо трёх создаваемых | принято | `NoteType` = `concept`, `problem`, `source_note` |
+| 11 | Уникальность имени проверять по всей базе, а не по папке | принято частично | FR-15: объединение `git ls-files` и `Files.walk`, без учёта регистра. Только обход ФС недостаточен: он не видит удалённые, но ещё отслеживаемые файлы |
+| 12 | Версии Java 25 / Spring Boot 4 / модели — «не существуют» (первый ревьюер) | отклонено (замечание ошибочно) | Проверено на Maven Central: Boot 4.1.2, Spring AI 2.0.2, telegrambots 10.3.0, JGit 7.3.0, Jib 3.5.4. Правок нет |
+| 13 | Таблица вложений один-ко-многим с `media_group_id` | принято | DDL: `source_attachment`, поля файлов перенесены из `source_item` |
+| 14 | Версия черновика в `request_key` | принято | FR-9 и раздел 11: `draft_version` в хеше, «Перегенерировать» не возвращает кэш |
+| 15 | Отказаться от хостового Python-линтера | принято частично | Java-валидатор — основной; внешний линтер опционален (`lint-command`), паритет подтверждается `LintParityTest`. Полный отказ опасен: настоящий гейт базы — внешний линтер, и его дрейф заблокирует синхронизацию всех заметок |
+| 16 | YAML-сериализатор + блокировка Dataview/Templater | принято | 10.3 п. 7–8, класс `ContentSanitizer`, тест `ContentSanitizerTest` |
+| 17 | Временные файлы в скрытом каталоге + проверка `index.lock` | принято | FR-18: `<root>/.uzelok-tmp/`, проверка `.git/index.lock`, требование строки в `.gitignore` |
+| 18 | Идемпотентность записи по совпадению хеша | принято | FR-18: файл с тем же `sha256` считается уже записанным |
+| 19 | Каскад артефактов, `tenant_id` в версиях, тезисы для текста | принято частично | `tenant_id` в `note_version` добавлен; `EXTRACTION` для текстовых входов закреплён (FR-9a); каскад оставлен с комментарием — удаления job в MVP нет |
+| 20 | Сократить MVP: убрать JGit, онбординг, темы без материала, статус транскрипции | принято частично | Убран `AWAITING_TRANSCRIPT` (FR-6, раздел 11). JGit-адаптер, онбординг баз и ввод темы остаются: это решение владельца (оба режима хранения в MVP, `/темы/` в скоупе) |
+
+### Отклонено полностью
+
+- **«Заменить внешний линтер на Java-проверки»** — нельзя: линтер базы (в Agora — `agora_lint.py`) остаётся
+  последним гейтом перед коммитом, и расхождение Java-правил с ним остановит синхронизацию всего vault,
+  а не одной заметки. Поэтому Java — быстрый предварительный валидатор, внешний линтер — опциональное
+  подтверждение, паритет — тестом.
+- **«Убрать JGit-хранилище и диалог онбординга из MVP»** — противоречит решению владельца: сервис должен
+  работать и с чужой базой, и с созданной для нового пользователя.
+- **«Убрать генерацию по теме без материала»** — тема входит в скоуп MVP владельца; сценарий уже ограничен
+  требованием опираться на существующие заметки темы и явное подтверждение.
+
+### Следствия для реализации
+
+- Таблиц в `V1__init.sql` теперь 14 (добавлена `source_attachment`).
+- Состояний job — 9 (без `AWAITING_TRANSCRIPT`).
+- Появляются два новых теста (альбом с рестартом, паритет линтера) и два новых класса
+  (`ContentSanitizer`, `NameUniqueness`).
 
 ## Связанные заметки
 
