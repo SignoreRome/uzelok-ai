@@ -1,0 +1,52 @@
+spring:
+  main:
+    web-application-type: none
+  datasource:
+    url: ${UZELOK_DB_URL}
+    username: ${UZELOK_DB_USER}
+    password: ${UZELOK_DB_PASSWORD}
+  flyway:
+    enabled: true
+uzelok:
+  telegram:
+    bot-token: ${UZELOK_BOT_TOKEN}
+    bot-username: ${UZELOK_BOT_USERNAME}
+    poll-timeout-seconds: 30
+    media-group-window-ms: 1500
+  llm:
+    providers:
+      openrouter:
+        base-url: https://openrouter.ai/api/v1
+        api-key: ${UZELOK_OPENROUTER_API_KEY}
+      opencode-go:
+        base-url: https://opencode.ai/zen/go/v1
+        api-key: ${UZELOK_OPENCODE_API_KEY}
+    steps:
+      extract:
+        provider: openrouter
+        model: anthropic/claude-haiku-5-5
+        fallback-model: google/gemini-4-argon
+      draft:
+        provider: opencode-go
+        model: deepseek-v4.1-flash
+    prompt-version: v1
+    daily-budget-usd: 2.00
+    timeout-seconds: 120
+  knowledge:
+    lint-command: ""
+    lint-parity-fixtures: src/test/resources/lint-fixtures
+    tmp-dir: .uzelok-tmp
+    confidence-threshold: 0.55
+    max-title-length: 80
+  worker:
+    lease-minutes: 10
+    max-attempts: 3
+    poll-interval-ms: 2000
+  otel:
+    enabled: false
+logging:
+  level:
+    root: INFO
+    uzelok: DEBUG
+  pattern:
+    console: "%d{yyyy-MM-dd'T'HH:mm:ss.SSSXXX} %-5level [%thread] %logger{40} job_id=%X{job_id} step=%X{step} status=%X{status} duration_ms=%X{duration_ms} - %msg%n"
