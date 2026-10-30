@@ -34,7 +34,7 @@ Telegram, подтверждает — и заметка появляется в
 - Java 25 (LTS, toolchain), Gradle 9 (Kotlin DSL)
 - Spring Boot 4.1.2, Spring AI 2.0.2 (`spring-ai-starter-model-openai`)
 - `org.telegram:telegrambots-longpolling` + `telegrambots-client` 10.3.0
-- PostgreSQL + Flyway 11, JDBC (без JPA)
+- PostgreSQL + Flyway 12 (BOM Spring Boot), JDBC (без JPA)
 - Тесты: JUnit 5, Testcontainers, ArchUnit 1.4.1
 - Деплой: k3s, Jib 3.5.4
 

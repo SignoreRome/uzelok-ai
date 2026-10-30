@@ -8,4 +8,8 @@ public record PreparedNote(
         String markdown,
         String contentHash,
         List<String> warnings) {
+
+    public PreparedNote {
+        warnings = warnings == null ? List.of() : List.copyOf(warnings);
+    }
 }

@@ -35,7 +35,7 @@ class UzelokPropertiesTest {
             assertThat(properties.telegram().botToken()).isEqualTo("test-token");
             assertThat(properties.telegram().botUsername()).isEqualTo("test-bot");
             assertThat(properties.telegram().pollTimeoutSeconds()).isEqualTo(30);
-            assertThat(properties.telegram().mediaGroupWindowMs()).isEqualTo(1500);
+            assertThat(properties.telegram().mediaGroupWindowMs()).isEqualTo(2000);
 
             assertThat(properties.llm().providers()).containsOnlyKeys("openrouter", "opencode-go");
             assertThat(properties.llm().providers().get("openrouter").baseUrl())
@@ -71,6 +71,7 @@ class UzelokPropertiesTest {
             assertThat(properties.worker().pollIntervalMs()).isEqualTo(2000);
 
             assertThat(properties.otel().enabled()).isFalse();
+            assertThat(properties.debug().dumpArtifacts()).isFalse();
         });
     }
 

@@ -11,13 +11,14 @@ public record UzelokProperties(
         @DefaultValue Llm llm,
         @DefaultValue Knowledge knowledge,
         @DefaultValue Worker worker,
-        @DefaultValue Otel otel) {
+        @DefaultValue Otel otel,
+        @DefaultValue Debug debug) {
 
     public record Telegram(
             String botToken,
             String botUsername,
             @DefaultValue("30") int pollTimeoutSeconds,
-            @DefaultValue("1500") int mediaGroupWindowMs) {
+            @DefaultValue("2000") int mediaGroupWindowMs) {
     }
 
     public record Llm(
@@ -54,5 +55,8 @@ public record UzelokProperties(
     }
 
     public record Otel(@DefaultValue("false") boolean enabled) {
+    }
+
+    public record Debug(@DefaultValue("false") boolean dumpArtifacts) {
     }
 }

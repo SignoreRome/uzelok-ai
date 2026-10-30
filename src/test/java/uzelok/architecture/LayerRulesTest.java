@@ -71,7 +71,6 @@ class LayerRulesTest {
     void onlyConfigUsesConfigurationPropertiesApi() {
         noClasses()
                 .that().resideOutsideOfPackage("uzelok.config..")
-                .and().doNotHaveSimpleName(UzelokApplication.class.getSimpleName())
                 .should().dependOnClassesThat()
                 .resideInAPackage("org.springframework.boot.context.properties..")
                 .check(MAIN_CLASSES);
@@ -82,7 +81,7 @@ class LayerRulesTest {
         classes()
                 .that().areMetaAnnotatedWith(Component.class)
                 .or().areAnnotatedWith(Scheduled.class)
-                .and().doNotHaveSimpleName(UzelokApplication.class.getSimpleName())
+                .and().doNotHaveFullyQualifiedName("uzelok.UzelokApplication")
                 .should().resideInAnyPackage(
                         "uzelok.pipeline..",
                         "uzelok.telegram..",
@@ -104,12 +103,8 @@ class LayerRulesTest {
     @Test
     void onlyLlmAndTelegramUseHttpClients() {
         noClasses()
-                .that().resideInAnyPackage(
-                        "uzelok.domain..",
-                        "uzelok.pipeline..",
-                        "uzelok.knowledge..",
-                        "uzelok.persistence..",
-                        "uzelok.config..")
+                .that().resideOutsideOfPackages("uzelok.llm..", "uzelok.telegram..")
+                .and().doNotHaveFullyQualifiedName("uzelok.UzelokApplication")
                 .should().dependOnClassesThat()
                 .resideInAnyPackage(
                         "java.net.http..",

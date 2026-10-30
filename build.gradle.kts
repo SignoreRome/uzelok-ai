@@ -27,6 +27,7 @@ dependencies {
     implementation(libs.telegrambots.longpolling)
     implementation(libs.telegrambots.client)
     implementation(libs.spring.ai.starter.model.openai)
+    implementation(libs.logstash.logback.encoder)
 
     testImplementation(libs.spring.boot.starter.test)
     testImplementation(libs.testcontainers.postgresql)

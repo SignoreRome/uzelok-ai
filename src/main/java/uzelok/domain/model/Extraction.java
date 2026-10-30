@@ -7,4 +7,9 @@ public record Extraction(
         List<Thesis> theses,
         List<String> unclearSpans,
         double confidence) {
+
+    public Extraction {
+        theses = theses == null ? List.of() : List.copyOf(theses);
+        unclearSpans = unclearSpans == null ? List.of() : List.copyOf(unclearSpans);
+    }
 }
