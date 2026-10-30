@@ -4,13 +4,13 @@ status: active
 created: 2026-10-30
 updated: 2026-10-30
 tags: [uzelok, project, mvp, tz, architecture, java, spring_boot, telegram, llm, git_sync]
-summary: "ТЗ MVP Uzelok v1.2: Telegram → OCR/тезисы → конспект → подтверждение → заметка в Obsidian-совместимой базе; структура приложения, 14 таблиц, разбор внешнего ревью"
+summary: "ТЗ MVP Uzelok v1.3: Telegram → OCR/тезисы → конспект → подтверждение → заметка в Obsidian-совместимой базе; структура приложения, 14 таблиц, разбор внешнего ревью"
 ---
 
 # ТЗ: Uzelok MVP
 
-Версия 1.2 от 2026-10-30: v1.1 — разбор внешнего ревью, v1.2 — отказ от git во внутренней базе
-(раздел 18). Основано на спецификации [[Uzelok]] и протоколе консилиума
+Версия 1.3 от 2026-10-30: v1.1 — разбор внешнего ревью, v1.2 — отказ от git во внутренней базе,
+v1.3 — устранение оставшихся следов git (раздел 18). Основано на спецификации [[Uzelok]] и протоколе консилиума
 [[2026-10-30_MVP_Architecture_Review]] (6 моделей). Документ предназначен для реализации внешним
 агентом-разработчиком и для повторного ревью.
 
@@ -28,8 +28,10 @@ Markdown-конспект, показывает его на подтвержде
 (single-node k3s). Целевая нагрузка MVP — единицы заметок в день, до 5–10 пользователей в перспективе.
 
 **Что считается успехом MVP:** с телефона отправлен материал, пользователь нажал «Сохранить», и через
-несколько секунд в базе знаний появился валидный Markdown-файл, который проходит линтер хранилища и
-автоматически коммитится в git. Без ручной правки YAML, без второй копии того же файла.
+несколько секунд в базе знаний появился валидный Markdown-файл, который проходит линтер хранилища.
+Дальше судьба файла зависит от типа базы: для внешней его подхватывает и коммитит собственный процесс
+синхронизации базы, для внутренней он остаётся в каталоге и выгружается командой `/export`. Сервис
+git-операций не выполняет ни в одном из режимов. Без ручной правки YAML, без второй копии того же файла.
 
 ---
 
@@ -349,7 +351,7 @@ uzelok-ai/
     │   │   │   │   ├── Tenant.java
     │   │   │   │   ├── AppUser.java
     │   │   │   │   ├── KnowledgeBase.java          # id, kind, rootPath, taxonomyRelPath, inboxRelPath
-    │   │   │   │   ├── KnowledgeBaseKind.java      # EXTERNAL_OBSIDIAN | INTERNAL_GIT
+    │   │   │   │   ├── KnowledgeBaseKind.java      # EXTERNAL_OBSIDIAN | INTERNAL_DIR
     │   │   │   │   ├── SourceItem.java
     │   │   │   │   ├── SourceAttachment.java       # вложение альбома: fileId, mime, size, sha256, mediaGroupId
     │   │   │   │   ├── ProcessingJob.java
@@ -566,10 +568,10 @@ CREATE TABLE telegram_account (
 CREATE TABLE knowledge_base (
     id                uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id         uuid NOT NULL REFERENCES tenant(id),
-    kind              text NOT NULL CHECK (kind IN ('EXTERNAL_OBSIDIAN','INTERNAL_GIT')),
+    kind              text NOT NULL CHECK (kind IN ('EXTERNAL_OBSIDIAN','INTERNAL_DIR')),
     root_path         text NOT NULL,
-    git_remote        text,
-    branch            text,
+    git_remote        text,       -- только EXTERNAL_OBSIDIAN; сервис это поле не использует
+    branch            text,       -- только EXTERNAL_OBSIDIAN; справочно, сервис не переключает ветки
     taxonomy_relpath  text NOT NULL DEFAULT '40_Knowledge/_meta/taxonomy.yaml',
     inbox_relpath     text NOT NULL DEFAULT '40_Knowledge/_Inbox',
     active            boolean NOT NULL DEFAULT true,
@@ -898,7 +900,7 @@ uzelok:
 - Deployment: `replicas: 1` (второй под ломает `getUpdates` — 409), `runAsUser: 1000`, `fsGroup: 1000`,
   лимит памяти 1536 Mi, CPU 1.
 - Бэкапы: `pg_dump uzelok` по cron в `/mnt/hdd/backups/uzelok/`, хранение 7 дней; бэкап внутренних баз —
-  обычный tar каталога (они git-репозитории).
+  обычный tar каталога базы (`40_Knowledge/` + `_meta/`), репозиториев среди них нет.
 
 ---
 
@@ -1047,6 +1049,20 @@ uzelok:
 
 Причина: git во внутренней базе дублировал `note_version`, требовал ещё одну зависимость и создавал
 иллюзию «сервис управляет историей», которой он не управляет.
+
+### Изменения v1.3: устранение оставшихся следов git
+
+Найдено при приёмке документа: после отказа от git в v1.2 в тексте остались три места, описывающих
+сервис как git-писателя. Исправлено без изменения архитектуры.
+
+- §1 — критерий успеха MVP: сервис пишет валидный файл и прогоняет линтер; коммит для внешней базы
+  делает её собственный процесс синхронизации, для внутренней файл остаётся в каталоге и выгружается
+  `/export`. Упоминание автоматического коммита убрано.
+- §7 и §9 — `KnowledgeBaseKind.INTERNAL_GIT` переименован в `INTERNAL_DIR`, значение в
+  `CHECK (kind IN (...))` приведено в соответствие; поля `git_remote` и `branch` помечены как
+  относящиеся только к `EXTERNAL_OBSIDIAN` (сервис их не использует).
+- §13.2 — бэкап внутренних баз: tar каталога базы (`40_Knowledge/` + `_meta/`); формулировка
+  «они git-репозитории» удалена.
 
 ## Связанные заметки
 
