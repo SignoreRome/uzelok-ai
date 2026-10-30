@@ -1066,6 +1066,15 @@ uzelok:
 - §13.2 — бэкап внутренних баз: tar каталога базы (`40_Knowledge/` + `_meta/`); формулировка
   «они git-репозитории» удалена.
 
+### Уточнения по итогам ревью этапа 1
+
+- §6.3 — Flyway: версия приходит из BOM Spring Boot 4.1.2 (фактически 12.4.0), требование «11.x» снято.
+- §13.1 — `media-group-window-ms: 2000` вместо 1500: приведено к FR-5 («не раньше чем через 2 с»);
+  добавлен флаг `uzelok.debug.dump-artifacts` из раздела 14.
+- §7.1 п.5 — `@Repository` в `persistence` разрешён явно: §7 требует `Jdbc*Repository` как Spring-бины.
+- §7 — комментарий к `SourceAttachment` приведён к §9: поля `position`, `telegram_file_id`, `file_path`,
+  `mime`, `byte_size`, `sha256`; `media_group_id` живёт в `source_item`.
+
 ## Связанные заметки
 
 [[Uzelok]]
