@@ -93,7 +93,8 @@ public final class ExternalObsidianStore implements KnowledgeStore {
                 report.taxonomy(), base, noteId, jobRef, draft, forceInbox, today, existingNames);
         Path target = resolveTarget(root, report.knowledgeRoot(), rendered.relPath());
 
-        Set<String> warnings = new LinkedHashSet<>(rendered.warnings());
+        Set<String> warnings = new LinkedHashSet<>(report.warnings());
+        warnings.addAll(rendered.warnings());
         if (Files.isRegularFile(target) && rendered.contentHash().equals(sha256(target))) {
             warnings.add("заметка уже записана, повтор не нужен");
         }

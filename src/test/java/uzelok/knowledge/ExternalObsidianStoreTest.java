@@ -55,6 +55,16 @@ class ExternalObsidianStoreTest {
     }
 
     @Test
+    void prepareSurfacesContractWarnings() throws IOException {
+        Files.createDirectories(root.resolve(".git"));
+        Files.writeString(root.resolve(".gitignore"), "");
+        ExternalObsidianStore store = VaultFixture.store("");
+        PreparedNote prepared = store.prepare(base, JOB_REF, draft("Warning Note", "Graphs"), false);
+
+        assertThat(prepared.warnings()).anyMatch(warning -> warning.contains(".uzelok-tmp"));
+    }
+
+    @Test
     void repeatedWriteWithSameContentIsIdempotent() {
         ExternalObsidianStore store = VaultFixture.store("");
         PreparedNote prepared = store.prepare(base, JOB_REF, draft("Repeat Test", "Graphs"), false);
