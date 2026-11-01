@@ -313,7 +313,7 @@ flowchart LR
 | Spring AI | 2.0.2 (`spring-ai-starter-model-openai`; стартер Anthropic не нужен — и OpenRouter, и OpenCode Go работают через OpenAI-совместимый API) |
 | Telegram Bots | `org.telegram:telegrambots-longpolling` + `telegrambots-client` 10.3.0 |
 | PostgreSQL driver | `org.postgresql:postgresql` (управляется Boot BOM) |
-| Flyway | 11.x (`flyway-core`, `flyway-database-postgresql`) |
+| Flyway | 12.x (`flyway-core`, `flyway-database-postgresql`); версия приходит из BOM Spring Boot 4.1.2 — 12.4.0 |
 | Gradle | 9.x (Kotlin DSL), Jib 3.5.4 |
 | Тесты | JUnit 5, Testcontainers `postgresql` 1.21.x, ArchUnit 1.4.1 |
 
@@ -353,7 +353,7 @@ uzelok-ai/
     │   │   │   │   ├── KnowledgeBase.java          # id, kind, rootPath, taxonomyRelPath, inboxRelPath
     │   │   │   │   ├── KnowledgeBaseKind.java      # EXTERNAL_OBSIDIAN | INTERNAL_DIR
     │   │   │   │   ├── SourceItem.java
-    │   │   │   │   ├── SourceAttachment.java       # вложение альбома: fileId, mime, size, sha256, mediaGroupId
+    │   │   │   │   ├── SourceAttachment.java       # вложение альбома: position, telegram_file_id, file_path, mime, byte_size, sha256; media_group_id — в source_item
     │   │   │   │   ├── ProcessingJob.java
     │   │   │   │   ├── JobStatus.java              # enum состояний из FR-6
     │   │   │   │   ├── JobArtifact.java
@@ -467,7 +467,7 @@ uzelok-ai/
 2. `pipeline` зависит только от `domain` (+ JDK); не импортирует `telegram`, `llm`, `persistence`, `knowledge`.
 3. `telegram`, `llm`, `knowledge`, `persistence` зависят от `domain`; друг друга не импортируют.
 4. `config` может зависеть от всех; ни один пакет, кроме `config`, не импортирует `org.springframework.boot.context.properties`.
-5. Классы с `@Scheduled`/`@Component` живут только в `pipeline`, `telegram`, `llm`, `knowledge`, `config`.
+5. Классы с `@Scheduled`/`@Component` живут только в `pipeline`, `telegram`, `llm`, `knowledge`, `config`; и `@Repository` в `persistence`.
 6. Ни один класс вне `persistence` не импортирует `org.springframework.jdbc`/`jakarta.persistence`.
 7. Ни один класс вне `llm`/`telegram` не вызывает HTTP-клиенты напрямую.
 
@@ -855,7 +855,7 @@ uzelok:
     bot-token: ${UZELOK_BOT_TOKEN}
     bot-username: ${UZELOK_BOT_USERNAME}
     poll-timeout-seconds: 30
-    media-group-window-ms: 1500
+    media-group-window-ms: 2000
   llm:
     providers:
       openrouter:
@@ -887,6 +887,8 @@ uzelok:
     poll-interval-ms: 2000
   otel:
     enabled: false
+  debug:
+    dump-artifacts: false
 ```
 
 ### 13.2. Окружение
@@ -1063,6 +1065,15 @@ uzelok:
   относящиеся только к `EXTERNAL_OBSIDIAN` (сервис их не использует).
 - §13.2 — бэкап внутренних баз: tar каталога базы (`40_Knowledge/` + `_meta/`); формулировка
   «они git-репозитории» удалена.
+
+### Уточнения по итогам ревью этапа 1
+
+- §6.3 — Flyway: версия приходит из BOM Spring Boot 4.1.2 (фактически 12.4.0), требование «11.x» снято.
+- §13.1 — `media-group-window-ms: 2000` вместо 1500: приведено к FR-5 («не раньше чем через 2 с»);
+  добавлен флаг `uzelok.debug.dump-artifacts` из раздела 14.
+- §7.1 п.5 — `@Repository` в `persistence` разрешён явно: §7 требует `Jdbc*Repository` как Spring-бины.
+- §7 — комментарий к `SourceAttachment` приведён к §9: поля `position`, `telegram_file_id`, `file_path`,
+  `mime`, `byte_size`, `sha256`; `media_group_id` живёт в `source_item`.
 
 ## Связанные заметки
 
