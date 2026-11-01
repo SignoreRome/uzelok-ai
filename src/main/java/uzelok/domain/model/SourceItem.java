@@ -9,7 +9,7 @@ public record SourceItem(
         UUID knowledgeBaseId,
         long chatId,
         long telegramMessageId,
-        String kind,
+        SourceKind kind,
         String mediaGroupId,
         String textBody,
         Instant createdAt) {

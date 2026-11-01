@@ -13,6 +13,16 @@ uzelok:
     bot-username: ${UZELOK_BOT_USERNAME}
     poll-timeout-seconds: 30
     media-group-window-ms: 2000
+    max-text-chars: 8000
+    max-photo-bytes: 15728640
+    max-document-bytes: 1048576
+    max-image-pixels: 30000000
+  storage:
+    artifacts-dir: ${UZELOK_ARTIFACTS_DIR:/var/lib/uzelok/artifacts}
+  limits:
+    jobs-per-day: 20
+    jobs-per-hour: 5
+    attachment-ttl-hours: 72
   llm:
     providers:
       openrouter:

@@ -36,6 +36,15 @@ class UzelokPropertiesTest {
             assertThat(properties.telegram().botUsername()).isEqualTo("test-bot");
             assertThat(properties.telegram().pollTimeoutSeconds()).isEqualTo(30);
             assertThat(properties.telegram().mediaGroupWindowMs()).isEqualTo(2000);
+            assertThat(properties.telegram().maxTextChars()).isEqualTo(8000);
+            assertThat(properties.telegram().maxPhotoBytes()).isEqualTo(15_728_640L);
+            assertThat(properties.telegram().maxDocumentBytes()).isEqualTo(1_048_576L);
+            assertThat(properties.telegram().maxImagePixels()).isEqualTo(30_000_000L);
+
+            assertThat(properties.storage().artifactsDir()).isEqualTo("/var/lib/uzelok/artifacts");
+            assertThat(properties.limits().jobsPerDay()).isEqualTo(20);
+            assertThat(properties.limits().jobsPerHour()).isEqualTo(5);
+            assertThat(properties.limits().attachmentTtlHours()).isEqualTo(72);
 
             assertThat(properties.llm().providers()).containsOnlyKeys("openrouter", "opencode-go");
             assertThat(properties.llm().providers().get("openrouter").baseUrl())

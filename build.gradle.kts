@@ -26,7 +26,6 @@ dependencies {
     implementation(libs.flyway.database.postgresql)
     implementation(libs.telegrambots.longpolling)
     implementation(libs.telegrambots.client)
-    implementation(libs.spring.ai.starter.model.openai)
     implementation(libs.logstash.logback.encoder)
     implementation(libs.snakeyaml)
     implementation(libs.commonmark)
@@ -34,12 +33,6 @@ dependencies {
     testImplementation(libs.spring.boot.starter.test)
     testImplementation(libs.testcontainers.postgresql)
     testImplementation(libs.archunit.junit5)
-}
-
-dependencyManagement {
-    imports {
-        mavenBom(libs.spring.ai.bom.get().toString())
-    }
 }
 
 tasks.withType<Test> {

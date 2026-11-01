@@ -346,6 +346,35 @@ message.getDocument() -> Document (getFileId/getFileName/getMimeType/getFileSize
 9. `LayerRulesTest` — добавить правило «`@Component`/`@Scheduled` только в `uzelok.config..`, `@Repository`
    только в `uzelok.persistence..`» (существующее правило оставить).
 
+## Правки по итогам ревью 3a (внесены после первой версии кода)
+
+Ревью двумя моделями (`deepseek-v4-pro` — дефекты, `grok-4.7` — безопасность и краевые случаи) плюс
+сквозной прогон на живом PostgreSQL против фейкового Bot API. Что исправлено:
+
+1. **At-most-once → at-least-once.** `UpdateRouter` писал `telegram_update` до обработки, поэтому падение
+   обработчика теряло апдейт навсегда (`BotSession` подтверждает offset до `consume`). Теперь: обработка →
+   регистрация; при исключении апдейт не регистрируется, пишется `update_failed`.
+2. **Квота била по членам альбома.** Проверка `countForChatSince` стояла до `ensure`, и 2-е/3-е фото
+   отсекались лимитом, хотя это части уже созданной задачи. Теперь `ensure` возвращает
+   `SourceItemCreation(item, created)`, квота проверяется только для нового материала.
+3. **Окно склейки альбома.** `next_run_at` при создании job сразу учитывает `mediaGroupWindowMs`, а
+   `postpone` берёт свежий `Instant.now(clock)` — раньше окно съедалось временем скачивания.
+4. **Скачивание без границ.** `BodyHandlers.ofByteArray()` тянул файл целиком в heap, таймаутов не было,
+   `file_size == null` превращался в 0 и проходил проверку. Теперь порт
+   `download(fileId, maxBytes)`, потоковое чтение с лимитом, `connectTimeout` 10 с, request timeout 120 с,
+   превышение → `AttachmentTooLarge`.
+5. **Токен в исключении.** `URI.create(file.getFileUrl(token))` мог бросить `IllegalArgumentException`
+   с `bot<token>` в сообщении. Теперь обёрнуто, cause не прикладывается.
+6. **Callback без проверки доступа.** `CallbackHandler` получил `AccessRepository` и проверяет `chatId`
+   и `from.id` (FR-2), для чужих — `auth_denied` без ответа.
+7. **Утечка текстов.** Отказы вложения идут из `ru.properties`, числа передаются строками
+   (`MessageFormat` печатал «8,001»).
+8. **`java.awt.Dimension`** заменён на `telegram.ImageSize`; `pollTimeoutSeconds` реально передаётся в
+   `registerBot`; `TelegramPollerLifecycle.isRunning()` не врёт при пустом токене; `Messages` внедряется
+   конструктором.
+9. **`spring-ai-starter-model-openai` удалён** (ADR 0003): приложение не стартовало без ключа LLM.
+   Появились `scripts/smoke-boot.sh` и `NoSpringAiOnClasspathTest`.
+
 ## Критерий готовности 3a
 
 1. `./gradlew cleanTest test` — зелёный; число тестов в `build/test-results/test/*.xml` посчитать и

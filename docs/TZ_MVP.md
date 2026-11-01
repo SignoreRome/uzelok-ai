@@ -4,15 +4,15 @@ status: active
 created: 2026-10-30
 updated: 2026-11-01
 tags: [uzelok, project, mvp, tz, architecture, java, spring_boot, telegram, llm, git_sync]
-summary: "ТЗ MVP Uzelok v1.5: Telegram → OCR/тезисы → конспект → подтверждение → заметка в Obsidian-совместимой базе; контракт заметки приведён к CONTRACT.md v2, сборка бинов вынесена в config"
+summary: "ТЗ MVP Uzelok v1.6: Telegram → OCR/тезисы → конспект → подтверждение → заметка в Obsidian-совместимой базе; контракт заметки приведён к CONTRACT.md v2, сборка бинов вынесена в config"
 ---
 
 # ТЗ: Uzelok MVP
 
-Версия 1.5 от 2026-11-01: v1.1 — разбор внешнего ревью, v1.2 — отказ от git во внутренней базе,
+Версия 1.6 от 2026-11-01: v1.1 — разбор внешнего ревью, v1.2 — отказ от git во внутренней базе,
 v1.3 — устранение оставшихся следов git, v1.4 — приведение контракта заметки к фактическому
 `40_Knowledge/_meta/CONTRACT.md` v2 и порта `KnowledgeStore` (раздел 19), v1.5 — сборка бинов только
-в `config` (ADR 0002) и уникальность альбома на уровне схемы. Основано на спецификации [[Uzelok]] и протоколе консилиума
+в `config` (ADR 0002) и уникальность альбома на уровне схемы, v1.6 — Spring AI удалён (ADR 0003). Основано на спецификации [[Uzelok]] и протоколе консилиума
 [[2026-10-30_MVP_Architecture_Review]] (6 моделей). Документ предназначен для реализации внешним
 агентом-разработчиком и для повторного ревью.
 
@@ -314,7 +314,7 @@ flowchart LR
 | :--- | :--- |
 | Java | 25 (LTS), toolchain в Gradle |
 | Spring Boot | 4.1.2 |
-| Spring AI | 2.0.2 (`spring-ai-starter-model-openai`; стартер Anthropic не нужен — и OpenRouter, и OpenCode Go работают через OpenAI-совместимый API) |
+| Spring AI | **не используется** (v1.6, ADR 0003): стартер поднимает автоконфигурации всех OpenAI-моделей и валит старт без ключа. LLM — собственный HTTP-клиент над OpenAI-совместимым API |
 | Telegram Bots | `org.telegram:telegrambots-longpolling` + `telegrambots-client` 10.3.0 |
 | PostgreSQL driver | `org.postgresql:postgresql` (управляется Boot BOM) |
 | Flyway | 12.x (`flyway-core`, `flyway-database-postgresql`); версия приходит из BOM Spring Boot 4.1.2 — 12.4.0 |
@@ -1146,6 +1146,22 @@ uzelok:
 - **Порядок реализации.** Этап 3 разбит: 3a — persistence-адаптеры, приём, авторизация, дедупликация,
   вложения, job в `RECEIVED`; 3b — LLM-клиент, схемы, промпты, воркер, превью, кнопки, запись. Рабочий
   бриф — `docs/STAGE3.md`.
+
+### Изменения v1.6: Spring AI удалён, старт приложения проверяется скриптом
+
+Найдено при первой проверке старта собранного jar на реальной БД (этап 3a).
+
+- **Spring AI удалён из зависимостей** (ADR 0003). `spring-ai-starter-model-openai` поднимает
+  автоконфигурации chat/audio/embedding-моделей и валит контекст без ключа:
+  `OpenAiAudioSpeechAutoConfiguration` → `At least one credential source must be specified`. Сервис не
+  стартовал вовсе; ни unit-тесты, ни ревью этого не видели, потому что `@SpringBootTest` в проекте нет.
+  LLM во второй части этапа 3 — собственный HTTP-клиент над OpenAI-совместимым API; маршрутизация по
+  шагам (`providers` + `steps`) и учёт стоимости делаются явно, без адаптера поверх автоконфигурации.
+- **`scripts/smoke-boot.sh`** — проверка «jar действительно стартует»: поднимает контекст с реальной БД,
+  пустым токеном бота, требует в логе `Started UzelokApplication` и отсутствие запуска поллера.
+  Обязательный шаг приёмки: зелёные тесты не доказывают, что контекст собирается.
+- **`NoSpringAiOnClasspathTest`** — тест-страховка: если Spring AI вернут, сборка упадёт и напомнит
+  про ADR 0003 и про необходимость отключить лишние автоконфигурации.
 
 ## Связанные заметки
 
