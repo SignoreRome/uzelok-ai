@@ -1,4 +1,6 @@
 package uzelok.domain.port;
 
-public record WrittenNote(String relPath, String contentHash) {
+import java.util.UUID;
+
+public record WrittenNote(UUID noteId, String relPath, String contentHash, boolean created) {
 }
