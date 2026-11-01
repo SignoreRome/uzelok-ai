@@ -77,6 +77,21 @@ class AttachmentReceiverTest {
     }
 
     @Test
+    void declaredOversizeDocumentIsRejectedBeforeDownload() {
+        long declaredSize = props.maxDocumentBytes() + 1;
+        SourceItem item = documentItem();
+
+        assertThatThrownBy(() -> receiver.receive(
+                item, "doc", "text/plain", declaredSize, "note.txt"))
+                .isInstanceOf(AttachmentRejected.class)
+                .hasMessage(new Messages().text("document.too_big",
+                        String.valueOf(declaredSize), String.valueOf(props.maxDocumentBytes())));
+
+        assertThat(gateway.downloadCalls()).isEmpty();
+        assertThat(repository.countBySourceItem(item.id())).isZero();
+    }
+
+    @Test
     void downloadOverLimitIsRejectedByGateway() {
         UzelokProperties.Telegram small = new UzelokProperties.Telegram(
                 "token", "test_bot", 30, 2000, 8000, 10L, 10L, 30_000_000L);

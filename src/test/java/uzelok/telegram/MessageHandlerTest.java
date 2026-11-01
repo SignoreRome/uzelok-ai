@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -22,6 +23,8 @@ import uzelok.support.InMemoryAttachmentRepository;
 import uzelok.support.InMemoryJobRepository;
 import uzelok.support.InMemorySourceItemRepository;
 import uzelok.support.InMemoryTelegramGateway;
+import uzelok.support.InMemoryTelegramUpdateRepository;
+import uzelok.support.MutableClock;
 import uzelok.support.RecordingAuditRepository;
 import uzelok.support.TelegramUpdates;
 
@@ -161,7 +164,60 @@ class MessageHandlerTest {
         assertThat(jobs.size()).isZero();
     }
 
+    @Test
+    void dailyQuotaRejectsSecondMessageWithinSameDay() {
+        MutableClock mutableClock = new MutableClock(Instant.parse("2026-01-15T10:00:00Z"));
+        handler = handlerWith(new FixedKnowledgeBaseRepository(knowledgeBase()),
+                new UzelokProperties.Limits(1, 5, 72), mutableClock);
+
+        handler.handle(TelegramUpdates.text(1, CHAT_ID, 500, FROM_ID, "первое"));
+        mutableClock.setInstant(Instant.parse("2026-01-15T12:00:00Z"));
+        handler.handle(TelegramUpdates.text(2, CHAT_ID, 501, FROM_ID, "второе"));
+
+        assertThat(source.size()).isEqualTo(1);
+        assertThat(jobs.size()).isEqualTo(1);
+        assertThat(audit.actions()).contains("quota_exceeded");
+        assertThat(audit.records()).anySatisfy(record -> {
+            if ("quota_exceeded".equals(record.action())) {
+                assertThat(record.detail()).containsEntry("reason", "jobs_per_day");
+            }
+        });
+        assertThat(telegram.lastSent().orElseThrow().text())
+                .isEqualTo(new Messages().text("quota.day"));
+    }
+
+    @Test
+    void quotaRejectionLeavesNoSourceItemOrJobButRegistersUpdate() {
+        MutableClock mutableClock = new MutableClock(Instant.parse("2026-01-15T10:00:00Z"));
+        handler = handlerWith(new FixedKnowledgeBaseRepository(knowledgeBase()),
+                new UzelokProperties.Limits(1, 5, 72), mutableClock);
+        InMemoryTelegramUpdateRepository updates = new InMemoryTelegramUpdateRepository();
+        CallbackHandler callbacks = new CallbackHandler(audit, access);
+        UpdateRouter router = new UpdateRouter(updates, handler, callbacks, audit);
+
+        router.consume(List.of(TelegramUpdates.text(1, CHAT_ID, 500, FROM_ID, "первое")));
+        int sourceAfterFirst = source.size();
+        int jobsAfterFirst = jobs.size();
+        assertThat(sourceAfterFirst).isEqualTo(1);
+        assertThat(jobsAfterFirst).isEqualTo(1);
+
+        mutableClock.setInstant(Instant.parse("2026-01-15T12:00:00Z"));
+        router.consume(List.of(TelegramUpdates.text(2, CHAT_ID, 501, FROM_ID, "второе")));
+
+        assertThat(source.size()).isEqualTo(sourceAfterFirst);
+        assertThat(jobs.size()).isEqualTo(jobsAfterFirst);
+        assertThat(source.findByChatAndMessage(CHAT_ID, 501)).isEmpty();
+        assertThat(audit.actions()).contains("quota_exceeded");
+        assertThat(updates.size()).isEqualTo(2);
+        assertThat(updates.typeOf(2)).isEqualTo("message");
+    }
+
     private MessageHandler handlerWith(uzelok.domain.port.KnowledgeBaseRepository bases) {
+        return handlerWith(bases, limits, clock);
+    }
+
+    private MessageHandler handlerWith(uzelok.domain.port.KnowledgeBaseRepository bases,
+                                       UzelokProperties.Limits usedLimits, Clock usedClock) {
         Messages messages = new Messages();
         CommandHandler commands = new CommandHandler(telegram, messages, telegramProps);
         AttachmentReceiver receiver = new AttachmentReceiver(
@@ -171,7 +227,7 @@ class MessageHandlerTest {
                 telegram,
                 messages);
         return new MessageHandler(access, bases, source, attachments, jobs, audit, telegram, commands,
-                receiver, clock, limits, telegramProps, messages);
+                receiver, usedClock, usedLimits, telegramProps, messages);
     }
 
     private static KnowledgeBase knowledgeBase() {
