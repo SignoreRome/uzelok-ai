@@ -4,14 +4,15 @@ status: active
 created: 2026-10-30
 updated: 2026-11-01
 tags: [uzelok, project, mvp, tz, architecture, java, spring_boot, telegram, llm, git_sync]
-summary: "ТЗ MVP Uzelok v1.4: Telegram → OCR/тезисы → конспект → подтверждение → заметка в Obsidian-совместимой базе; контракт заметки приведён к CONTRACT.md v2"
+summary: "ТЗ MVP Uzelok v1.5: Telegram → OCR/тезисы → конспект → подтверждение → заметка в Obsidian-совместимой базе; контракт заметки приведён к CONTRACT.md v2, сборка бинов вынесена в config"
 ---
 
 # ТЗ: Uzelok MVP
 
-Версия 1.4 от 2026-11-01: v1.1 — разбор внешнего ревью, v1.2 — отказ от git во внутренней базе,
+Версия 1.5 от 2026-11-01: v1.1 — разбор внешнего ревью, v1.2 — отказ от git во внутренней базе,
 v1.3 — устранение оставшихся следов git, v1.4 — приведение контракта заметки к фактическому
-`40_Knowledge/_meta/CONTRACT.md` v2 и порта `KnowledgeStore` (раздел 19). Основано на спецификации [[Uzelok]] и протоколе консилиума
+`40_Knowledge/_meta/CONTRACT.md` v2 и порта `KnowledgeStore` (раздел 19), v1.5 — сборка бинов только
+в `config` (ADR 0002) и уникальность альбома на уровне схемы. Основано на спецификации [[Uzelok]] и протоколе консилиума
 [[2026-10-30_MVP_Architecture_Review]] (6 моделей). Документ предназначен для реализации внешним
 агентом-разработчиком и для повторного ревью.
 
@@ -470,7 +471,9 @@ uzelok-ai/
 2. `pipeline` зависит только от `domain` (+ JDK); не импортирует `telegram`, `llm`, `persistence`, `knowledge`.
 3. `telegram`, `llm`, `knowledge`, `persistence` зависят от `domain`; друг друга не импортируют.
 4. `config` может зависеть от всех; ни один пакет, кроме `config`, не импортирует `org.springframework.boot.context.properties`.
-5. Классы с `@Scheduled`/`@Component` живут только в `pipeline`, `telegram`, `llm`, `knowledge`, `config`; и `@Repository` в `persistence`.
+5. Классы с `@Component`/`@Scheduled`/`@Configuration` живут только в `config`; `@Repository` и
+   `@Transactional` — только в `persistence` (ADR 0002). Классы `pipeline`, `telegram`, `llm`, `knowledge` —
+   обычные, без Spring-аннотаций, зависимости через конструктор.
 6. Ни один класс вне `persistence` не импортирует `org.springframework.jdbc`/`jakarta.persistence`.
 7. Ни один класс вне `llm`/`telegram` не вызывает HTTP-клиенты напрямую.
 
@@ -735,6 +738,21 @@ CREATE TABLE audit_event (
 
 Заделы на будущее, **не создавать в MVP**: `review_card` (FSRS), `note_chunk` + `embedding vector(N)` (RAG).
 Задел фактический: `note.id` (тот же UUID пишется во frontmatter) и артефакт `EXTRACTION` с тезисами.
+
+### 9.1. Миграция `V2__ingest.sql` (v1.5)
+
+Альбом — это несколько апдейтов Telegram, у каждого свой `telegram_message_id`, поэтому один `source_item`
+на группу нельзя обеспечить существующим `UNIQUE(chat_id, telegram_message_id)`. Уникальность группы
+переносится в схему:
+
+```sql
+CREATE UNIQUE INDEX IF NOT EXISTS source_item_media_group_uniq
+    ON source_item (chat_id, media_group_id) WHERE media_group_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS source_item_chat_created_idx ON source_item (chat_id, created_at);
+```
+
+Первый индекс делает `ensure` по `media_group_id` идемпотентным при одновременной доставке двух фото
+альбома (победитель один, второй читает его строку), второй — обслуживает квоту «20 задач в сутки на чат».
 
 ---
 
@@ -1112,6 +1130,22 @@ uzelok:
 - Java-валидатор обязан покрывать правила линтера, которые проверяются до записи: обязательные поля,
   `type`/`status`, принадлежность темы домену, совпадение папок с frontmatter, имя и его уникальность,
   `summary` ≤ 150, абсолютные пути в прозе, возраст файлов в `_Inbox`.
+
+### Изменения v1.5: сборка бинов и уникальность альбома
+
+Найдено при подготовке этапа 3. Два места ТЗ противоречили сами себе или схеме БД.
+
+- **§7.1 п. 5 против п. 2.** `@Scheduled` в `pipeline` нарушает правило «pipeline зависит только от `domain`
+  и JDK». Решение (ADR 0002): Spring-аннотации только в `config` (`@Component`/`@Scheduled`/`@Configuration`)
+  и `persistence` (`@Repository`/`@Transactional`); `pipeline`, `telegram`, `llm`, `knowledge` — обычные
+  классы с зависимостями в конструкторе. Планировщик — обёртка в `config`, long polling —
+  `SmartLifecycle` в `config`.
+- **§9 против FR-5.** `UNIQUE(chat_id, telegram_message_id)` не может выразить «один `source_item` на
+  альбом»: у каждого фото альбома свой `message_id`. Добавлена миграция `V2__ingest.sql` с частичным
+  уникальным индексом по `(chat_id, media_group_id)` (раздел 9.1).
+- **Порядок реализации.** Этап 3 разбит: 3a — persistence-адаптеры, приём, авторизация, дедупликация,
+  вложения, job в `RECEIVED`; 3b — LLM-клиент, схемы, промпты, воркер, превью, кнопки, запись. Рабочий
+  бриф — `docs/STAGE3.md`.
 
 ## Связанные заметки
 
