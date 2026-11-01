@@ -86,7 +86,7 @@ public final class NoteRenderer {
         String name = baseName;
         if (existingNames.contains(baseName.toLowerCase(Locale.ROOT))) {
             inbox = true;
-            name = names.withSuffix(baseName, firstEight(jobRef));
+            name = names.withSuffix(baseName, collisionSuffix(jobRef, noteId));
             warnings.add("имя занято, сохраню во входящие как " + name);
         }
 
@@ -214,6 +214,21 @@ public final class NoteRenderer {
         }
         matcher.appendTail(result);
         return result.toString();
+    }
+
+    private static String collisionSuffix(String jobRef, UUID noteId) {
+        String fromJob = cleanSuffix(firstEight(jobRef));
+        if (!fromJob.isEmpty()) {
+            return fromJob;
+        }
+        String fromId = cleanSuffix(firstEight(noteId == null ? null : noteId.toString()));
+        return fromId.isEmpty() ? "note" : fromId;
+    }
+
+    private static String cleanSuffix(String value) {
+        String replaced = value.replaceAll("[^A-Za-z0-9_]", "_");
+        String collapsed = replaced.replaceAll("_+", "_");
+        return collapsed.replaceAll("^_+|_+$", "");
     }
 
     private static String firstEight(String jobRef) {

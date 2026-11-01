@@ -161,6 +161,32 @@ class NoteRendererTest {
     }
 
     @Test
+    void sanitizesCollisionSuffixFromJobRef() {
+        NoteDraft draft = draft("Two Pointers Basics", NoteType.concept, "Two_Pointers",
+                "Коллизия имени", "Тело");
+
+        RenderedNote note = renderer.render(taxonomy, base, NOTE_ID, "ab cd/ef", draft,
+                false, TODAY, Set.of("two_pointers_basics"));
+
+        assertThat(note.inbox()).isTrue();
+        assertThat(note.fileName()).isEqualTo("Two_Pointers_Basics_ab_cd_ef.md");
+        assertThat(note.fileName().replace(".md", "")).matches("[A-Za-z0-9_]+");
+    }
+
+    @Test
+    void fallsBackToNoteIdWhenJobRefSuffixIsEmpty() {
+        NoteDraft draft = draft("Two Pointers Basics", NoteType.concept, "Two_Pointers",
+                "Коллизия имени", "Тело");
+
+        RenderedNote note = renderer.render(taxonomy, base, NOTE_ID, "....", draft,
+                false, TODAY, Set.of("two_pointers_basics"));
+
+        assertThat(note.inbox()).isTrue();
+        assertThat(note.fileName()).isEqualTo("Two_Pointers_Basics_aaaaaaaa.md");
+        assertThat(note.fileName().replace(".md", "")).matches("[A-Za-z0-9_]+");
+    }
+
+    @Test
     void removesUnknownWikilinksAndKeepsKnownOnes() {
         NoteDraft draft = draft("Links", NoteType.concept, "Graphs", "Ссылки",
                 "См. [[Missing Note]] и [[Known_Note|известная]]. Ещё [[Two_Pointers]].");

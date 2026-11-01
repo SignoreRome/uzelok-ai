@@ -90,8 +90,64 @@ class ContentSanitizerTest {
                 """);
 
         assertThat(result.body()).doesNotContain("TABLE file.name");
-        assertThat(result.body()).contains("[удалён исполняемый блок Obsidian: DATAVIEW]");
-        assertThat(result.warnings()).contains("удалён исполняемый блок: DATAVIEW (1)");
+        assertThat(result.body()).contains("[удалён исполняемый блок Obsidian: dataview]");
+        assertThat(result.warnings()).contains("удалён исполняемый блок: dataview (1)");
+    }
+
+    @Test
+    void removesUnclosedExecutableFenceToEndOfBody() {
+        ContentSanitizer.SanitizedBody result = sanitizer.sanitize("""
+                До
+                ```dataviewjs
+                dv.list(dv.pages())
+                хвост без закрытия""");
+
+        assertThat(result.body()).doesNotContain("dv.list", "хвост без закрытия");
+        assertThat(result.body()).contains("До", "[удалён исполняемый блок Obsidian: dataviewjs]");
+        assertThat(result.warnings()).contains("удалён исполняемый блок: dataviewjs (1)");
+    }
+
+    @Test
+    void removesExecutableFenceWithQuotePrefix() {
+        ContentSanitizer.SanitizedBody result = sanitizer.sanitize("""
+                > ```dataviewjs
+                > dv.list(dv.pages())
+                > ```
+                """);
+
+        assertThat(result.body()).doesNotContain("dv.list", "```dataviewjs");
+        assertThat(result.body()).contains("[удалён исполняемый блок Obsidian: dataviewjs]");
+        assertThat(result.warnings()).contains("удалён исполняемый блок: dataviewjs (1)");
+    }
+
+    @Test
+    void removesFenceWhenClosingShorterThanOpening() {
+        ContentSanitizer.SanitizedBody result = sanitizer.sanitize("""
+                ````dataview
+                TABLE file.name FROM "notes"
+                ```
+                всё ещё внутри блока
+                """);
+
+        assertThat(result.body()).doesNotContain("TABLE file.name", "всё ещё внутри блока");
+        assertThat(result.body()).contains("[удалён исполняемый блок Obsidian: dataview]");
+        assertThat(result.warnings()).contains("удалён исполняемый блок: dataview (1)");
+    }
+
+    @Test
+    void keepsDataviewFenceInsideOrdinaryCodeBlock() {
+        String body = """
+                ```java
+                ```dataview
+                TABLE file.name FROM "notes"
+                ```
+                ```
+                """;
+
+        ContentSanitizer.SanitizedBody result = sanitizer.sanitize(body);
+
+        assertThat(result.body()).isEqualTo(body);
+        assertThat(result.warnings()).isEmpty();
     }
 
     @Test
