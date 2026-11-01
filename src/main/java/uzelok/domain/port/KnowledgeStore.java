@@ -1,12 +1,13 @@
 package uzelok.domain.port;
 
-import java.util.List;
 import uzelok.domain.exception.ContractViolation;
+import uzelok.domain.model.KnowledgeBase;
 import uzelok.domain.model.NoteDraft;
 
 public interface KnowledgeStore {
 
-    PreparedNote prepare(NoteDraft draft, boolean forceInbox) throws ContractViolation;
+    PreparedNote prepare(KnowledgeBase base, String jobRef, NoteDraft draft, boolean forceInbox)
+            throws ContractViolation;
 
-    WrittenNote write(PreparedNote note) throws ContractViolation;
+    WrittenNote write(KnowledgeBase base, PreparedNote note) throws ContractViolation;
 }

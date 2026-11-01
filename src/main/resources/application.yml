@@ -34,10 +34,11 @@ uzelok:
     timeout-seconds: 120
   knowledge:
     lint-command: ""
+    lint-timeout-seconds: 60
     lint-parity-fixtures: src/test/resources/lint-fixtures
     tmp-dir: .uzelok-tmp
     confidence-threshold: 0.55
-    max-title-length: 80
+    max-file-name-length: 60
   worker:
     lease-minutes: 10
     max-attempts: 3

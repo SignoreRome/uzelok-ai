@@ -6,6 +6,7 @@ telegrambots = "10.3.0"
 testcontainers = "1.21.3"
 archunit = "1.4.1"
 logstash-logback-encoder = "9.0"
+commonmark = "0.32.0"
 
 # версии Spring Boot / Flyway / PostgreSQL приходят из BOM
 [libraries]
@@ -22,6 +23,8 @@ spring-ai-starter-model-openai = { module = "org.springframework.ai:spring-ai-st
 testcontainers-postgresql = { module = "org.testcontainers:postgresql", version.ref = "testcontainers" }
 archunit-junit5 = { module = "com.tngtech.archunit:archunit-junit5", version.ref = "archunit" }
 logstash-logback-encoder = { module = "net.logstash.logback:logstash-logback-encoder", version.ref = "logstash-logback-encoder" }
+snakeyaml = { module = "org.yaml:snakeyaml" }
+commonmark = { module = "org.commonmark:commonmark", version.ref = "commonmark" }
 
 [plugins]
 spring-boot = { id = "org.springframework.boot", version.ref = "spring-boot" }

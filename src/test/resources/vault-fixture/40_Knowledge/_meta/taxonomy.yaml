@@ -1,0 +1,37 @@
+contract_version: 2
+inbox_folder: _Inbox
+meta_folder: _meta
+domains:
+  - id: Algorithms
+    aliases: [algo, algorithms, алгоритмы]
+    scope: "Алгоритмы и структуры данных"
+    topics:
+      - id: Two_Pointers
+        aliases: [two_pointers, два_указателя]
+        scope: "Метод двух указателей"
+      - id: Sliding_Window
+        aliases: [sliding_window, окно]
+        scope: "Скользящее окно"
+      - id: Graphs
+        aliases: [graph, графы]
+        scope: "Графы"
+  - id: Java
+    aliases: [java, джава]
+    scope: "Java"
+    topics:
+      - id: Collections
+        aliases: [collections]
+        scope: "Коллекции"
+      - id: Concurrency
+        aliases: [concurrency]
+        scope: "Многопоточность"
+  - id: Networks
+    aliases: [networks, сети]
+    scope: "Сети"
+    topics:
+      - id: TCP
+        aliases: [tcp]
+        scope: "TCP"
+      - id: HTTP
+        aliases: [http]
+        scope: "HTTP"

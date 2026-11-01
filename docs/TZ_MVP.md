@@ -2,15 +2,16 @@
 type: project
 status: active
 created: 2026-10-30
-updated: 2026-10-30
+updated: 2026-11-01
 tags: [uzelok, project, mvp, tz, architecture, java, spring_boot, telegram, llm, git_sync]
-summary: "ТЗ MVP Uzelok v1.3: Telegram → OCR/тезисы → конспект → подтверждение → заметка в Obsidian-совместимой базе; структура приложения, 14 таблиц, разбор внешнего ревью"
+summary: "ТЗ MVP Uzelok v1.4: Telegram → OCR/тезисы → конспект → подтверждение → заметка в Obsidian-совместимой базе; контракт заметки приведён к CONTRACT.md v2"
 ---
 
 # ТЗ: Uzelok MVP
 
-Версия 1.3 от 2026-10-30: v1.1 — разбор внешнего ревью, v1.2 — отказ от git во внутренней базе,
-v1.3 — устранение оставшихся следов git (раздел 18). Основано на спецификации [[Uzelok]] и протоколе консилиума
+Версия 1.4 от 2026-11-01: v1.1 — разбор внешнего ревью, v1.2 — отказ от git во внутренней базе,
+v1.3 — устранение оставшихся следов git, v1.4 — приведение контракта заметки к фактическому
+`40_Knowledge/_meta/CONTRACT.md` v2 и порта `KnowledgeStore` (раздел 19). Основано на спецификации [[Uzelok]] и протоколе консилиума
 [[2026-10-30_MVP_Architecture_Review]] (6 моделей). Документ предназначен для реализации внешним
 агентом-разработчиком и для повторного ревью.
 
@@ -185,13 +186,15 @@ LLM-провайдер (OpenAI-совместимый API), git-репозито
 - **FR-13.** Frontmatter, имя файла, путь и `id` формирует код, а не модель. Модель предлагает `title`,
   `type`, `topic`, `summary`, `body_md`, `confidence`. `topic` валидируется по словарю базы.
 - **FR-14.** Детерминированные правила рендера: имя файла `Title_Case_With_Underscores` (только
-  `[A-Za-z0-9_]`, латиница; при кириллическом заголовке — транслитерация), длина ≤ 80 символов; путь
-  `<domain-folder>/<topic-folder>/<Name>.md` по словарю.
+  `[A-Za-z0-9_]`, латиница; при кириллическом заголовке — транслитерация), длина ≤ 60 символов (лимит
+  `CONTRACT.md` v2; суффикс коллизии входит в лимит); путь `<domain-folder>/<topic-folder>/<Name>.md`
+  по словарю.
   **Тема не найдена в словаре** → заметка не блокируется, а уходит в `_Inbox/` с предупреждением в превью
   («тема не распознана, сохраню во входящие»); пользователь может указать тему реплаем, и рендер повторится.
-  **Коллизия имени** → заметка уходит в `_Inbox/<Name>_<YYYY-MM-DD>_<job8>.md`, где `job8` — первые 8 символов
-  `job.id`; суффикс детерминирован (тот же job при повторе даёт то же имя), показан в превью. Молчаливая
-  замена имени без суффикса запрещена.
+  **Коллизия имени** → заметка уходит в `_Inbox/<Name>_<job8>.md`, где `job8` — первые 8 символов
+  `job.id`; суффикс детерминирован (тот же job при повторе даёт то же имя), показан в превью. Дата в имени
+  не ставится: дефисы запрещены контрактом, дата живёт в `created`/`updated`. Молчаливая замена имени
+  без суффикса запрещена.
 - **FR-15.** Проверка уникальности имени выполняется по всей базе, а не только по целевой папке, и без учёта
   регистра: сравнивается объединение `git ls-files` (отслеживаемые файлы) и обхода рабочего дерева
   (`Files.walk` — ловит untracked). Нормализация — `lower(Locale.ROOT)`. Блокирующими для записи остаются
@@ -475,13 +478,16 @@ uzelok-ai/
 
 ```java
 public interface KnowledgeStore {
-    PreparedNote prepare(NoteDraft draft, boolean forceInbox) throws ContractViolation;
-    WrittenNote write(PreparedNote note) throws ContractViolation;
+    PreparedNote prepare(KnowledgeBase base, String jobRef, NoteDraft draft, boolean forceInbox)
+            throws ContractViolation;
+    WrittenNote write(KnowledgeBase base, PreparedNote note) throws ContractViolation;
 }
 
 public record PreparedNote(
-        String relPath, String fileName, String markdown,
+        UUID noteId, String relPath, String fileName, String markdown,
         String contentHash, List<String> warnings) {}
+
+public record WrittenNote(UUID noteId, String relPath, String contentHash) {}
 
 public interface LlmGateway {
     Extraction extract(List<Path> images, String text, String modelId, String promptVersion);
@@ -751,9 +757,10 @@ CREATE TABLE audit_event (
 ```yaml
 ---
 type: concept            # concept | problem | source_note
-topic: two_pointers      # тема из taxonomy.yaml
+domain: Algorithms       # домен из taxonomy.yaml, вычисляет код по теме
+topic: Two_Pointers      # тема из taxonomy.yaml (id, регистр значим)
 status: raw              # всегда raw для новых
-source: telegram         # telegram | lecture | book | article | thought
+source: telegram         # telegram | lecture | book | article | video | own_research
 id: 0192f3c4-...         # UUID, генерирует сервис
 created: 2026-10-30
 updated: 2026-10-30
@@ -761,15 +768,19 @@ summary: "одно предложение до 150 символов"
 ---
 ```
 
-Поля `topics`, `derived_from`, `problem_*` сервис не заполняет.
+`domain` обязателен: `CONTRACT.md` v2 и линтер базы требуют его наличия, иначе заметка отклоняется
+(`E_REQUIRED`). Модель домен не выбирает — код разрешает тему в словаре и берёт домен-владелец; если одна
+и та же тема объявлена в двух доменах, это ошибка словаря (`ContractViolation` при загрузке), а не выбор
+на лету. Поля `topics`, `derived_from`, `problem_*` сервис не заполняет; заметка типа `problem` без
+`problem_*` уходит в `_Inbox` с предупреждением.
 
 ### 10.3. Правила
 
 1. Тема из словаря → папка `<domain>/<topic>` строго как в `taxonomy.yaml`; новых папок сервис не создаёт.
-2. Имя файла: латиница `Title_Case_With_Underscores`, ≤ 80 символов, уникально по всей базе (проверка
-   по `git ls-files`).
+2. Имя файла: латиница `Title_Case_With_Underscores`, ≤ 60 символов, уникально по всей базе (объединение
+   `git ls-files` и обхода рабочего дерева).
 3. Тема не найдена или уверенность модели ниже порога → `_Inbox/<Name>.md` (если имя занято — суффикс
-   `_<YYYY-MM-DD>_<job8>` по FR-14, а не отказ).
+   `_<job8>` по FR-14, а не отказ).
 4. Отказ от записи вместо «умного» доисправления: любые сомнения показываются пользователю.
 5. Линтер базы прогоняется на временной копии каталога до записи; код возврата ≠ 0 → запись запрещена,
    пользователю показывается причина. Если `lint-command` не задан, работает Java-валидатор, а его
@@ -877,10 +888,11 @@ uzelok:
     timeout-seconds: 120
   knowledge:
     lint-command: ""                # пусто = только Java-валидатор; для Agora: /home/roman/.hermes/scripts/agora_lint.py
+    lint-timeout-seconds: 60
     lint-parity-fixtures: src/test/resources/lint-fixtures
     tmp-dir: .uzelok-tmp            # скрытый каталог внутри корня базы, должен быть в .gitignore
     confidence-threshold: 0.55
-    max-title-length: 80
+    max-file-name-length: 60        # лимит CONTRACT.md v2
   worker:
     lease-minutes: 10
     max-attempts: 3
@@ -1074,6 +1086,32 @@ uzelok:
 - §7.1 п.5 — `@Repository` в `persistence` разрешён явно: §7 требует `Jdbc*Repository` как Spring-бины.
 - §7 — комментарий к `SourceAttachment` приведён к §9: поля `position`, `telegram_file_id`, `file_path`,
   `mime`, `byte_size`, `sha256`; `media_group_id` живёт в `source_item`.
+
+### Изменения v1.4: контракт заметки приведён к фактическому CONTRACT.md v2
+
+Найдено при подготовке этапа 2: ТЗ описывало frontmatter, имя файла и суффикс коллизии так, что готовая
+заметка **не прошла бы линтер реальной базы** (`agora_lint.py`, contract_version 2). Критерий приёмки
+этапа 2 — «линтер 0 на копии базы», поэтому источником истины принят `40_Knowledge/_meta/CONTRACT.md` v2.
+
+| № | Что в ТЗ было | Что стало | Причина |
+| :--- | :--- | :--- | :--- |
+| 1 | frontmatter без `domain` | `domain` обязателен, вычисляется кодом по теме | линтер: `E_REQUIRED нет обязательного поля 'domain'`; путь = `<domain>/<topic>/` |
+| 2 | имя ≤ 80 символов | имя ≤ 60 символов, суффикс входит в лимит | `CONTRACT.md` §6 и `_name_problem`: `имя файла длиннее 60 символов` |
+| 3 | коллизия: `_Inbox/<Name>_<YYYY-MM-DD>_<job8>.md` | `_Inbox/<Name>_<job8>.md` | дефисы в имени запрещены (`NAME_RE ^[A-Za-z0-9_]+$`), дата живёт в `created` |
+| 4 | `prepare(draft, forceInbox)`, `write(note)` | `prepare(base, jobRef, draft, forceInbox)`, `write(base, note)` | база — параметр операции; в одном процессе несколько тенантов и баз, адаптер не хранит состояние |
+| 5 | `PreparedNote` без идентификатора | `PreparedNote.noteId`, `WrittenNote.noteId` | `id` во frontmatter — устойчивая идентичность для `note` и будущих карточек FSRS |
+| 6 | контракт базы не версионировался | `taxonomy.yaml: contract_version` проверяется при загрузке; поддерживается 2 | чужая версия контракта ломает рендер молча — лучше отказ при регистрации базы |
+
+Следствия:
+
+- `taxonomy.yaml` Agora имеет формат `domains[].topics[]` с `id`, `aliases`, `scope`, а не `Map<String, List<String>>`;
+  `Taxonomy` в домене получает методы разрешения темы по `id` или алиасу без учёта регистра.
+- Тема, объявленная в двух доменах, — ошибка словаря, а не повод угадывать домен.
+- Тело заметки не может содержать `[[...]]` на несуществующую заметку (линтер: `E_EXT_LINK` — ошибка):
+  неизвестные ссылки вырезаются в обычный текст с предупреждением в превью.
+- Java-валидатор обязан покрывать правила линтера, которые проверяются до записи: обязательные поля,
+  `type`/`status`, принадлежность темы домену, совпадение папок с frontmatter, имя и его уникальность,
+  `summary` ≤ 150, абсолютные пути в прозе, возраст файлов в `_Inbox`.
 
 ## Связанные заметки
 
