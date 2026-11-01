@@ -203,4 +203,133 @@ class ContentSanitizerTest {
         assertThat(result.body()).isEqualTo(body);
         assertThat(result.warnings()).isEmpty();
     }
+
+    @Test
+    void removesJsEngineFencedBlock() {
+        ContentSanitizer.SanitizedBody result = sanitizer.sanitize("```js-engine\nreturn 1\n```");
+
+        assertThat(result.body()).doesNotContain("return 1");
+        assertThat(result.body()).contains("[удалён исполняемый блок Obsidian: js-engine]");
+        assertThat(result.warnings()).contains("удалён исполняемый блок: js-engine (1)");
+    }
+
+    @Test
+    void removesInlineDataviewCodeSpans() {
+        ContentSanitizer.SanitizedBody result = sanitizer.sanitize(
+                "имя `= this.file.name`, счёт `$= dv.pages().length`");
+
+        assertThat(result.body()).doesNotContain("= this.file.name", "$= dv.pages().length");
+        assertThat(result.body()).contains("имя", "счёт");
+        assertThat(result.warnings()).contains("удалён inline-запрос Dataview (2)");
+    }
+
+    @Test
+    void removesExecutableFenceInsideListItem() {
+        ContentSanitizer.SanitizedBody result = sanitizer.sanitize(
+                "- ```dataview\n  TABLE file.name FROM \"notes\"\n  ```");
+
+        assertThat(result.body()).doesNotContain("TABLE file.name");
+        assertThat(result.body()).contains("[удалён исполняемый блок Obsidian: dataview]");
+    }
+
+    @Test
+    void removesExecutableFenceInsideNestedQuote() {
+        ContentSanitizer.SanitizedBody result = sanitizer.sanitize(
+                ">  > ```dataviewjs\n>  > dv.list(...)\n>  > ```");
+
+        assertThat(result.body()).doesNotContain("dv.list");
+        assertThat(result.body()).contains("[удалён исполняемый блок Obsidian: dataviewjs]");
+    }
+
+    @Test
+    void removesDataviewBlockAfterBacktickInInfoLine() {
+        ContentSanitizer.SanitizedBody result = sanitizer.sanitize(
+                "```java`\n```dataview\nTABLE ...\n```");
+
+        assertThat(result.body()).contains("```java`");
+        assertThat(result.body()).doesNotContain("TABLE ...");
+        assertThat(result.body()).contains("[удалён исполняемый блок Obsidian: dataview]");
+    }
+
+    @Test
+    void removesDataviewBlockAfterIndentedTextFence() {
+        ContentSanitizer.SanitizedBody result = sanitizer.sanitize(
+                "    ```text\n```dataview\nTABLE ...\n```");
+
+        assertThat(result.body()).contains("```text");
+        assertThat(result.body()).doesNotContain("TABLE ...");
+        assertThat(result.body()).contains("[удалён исполняемый блок Obsidian: dataview]");
+    }
+
+    @Test
+    void replacesAngleBracketJavascriptLink() {
+        ContentSanitizer.SanitizedBody result = sanitizer.sanitize("[клик](<javascript:alert(1)>)");
+
+        assertThat(result.body()).isEqualTo("клик");
+    }
+
+    @Test
+    void replacesEntityEncodedJavascriptLink() {
+        ContentSanitizer.SanitizedBody result = sanitizer.sanitize("[клик](javascript&#58;alert(1))");
+
+        assertThat(result.body()).isEqualTo("клик");
+    }
+
+    @Test
+    void replacesReferenceJavascriptLink() {
+        ContentSanitizer.SanitizedBody result = sanitizer.sanitize(
+                "[клик][js]\n\n[js]: javascript:alert(1)");
+
+        assertThat(result.body()).doesNotContain("javascript:");
+        assertThat(result.body()).contains("клик");
+    }
+
+    @Test
+    void removesJavascriptAutolink() {
+        ContentSanitizer.SanitizedBody result = sanitizer.sanitize("[клик]<javascript:alert(1)>");
+
+        assertThat(result.body()).doesNotContain("javascript:");
+        assertThat(result.body()).contains("клик");
+    }
+
+    @Test
+    void removesJavascriptHrefTagKeepingText() {
+        ContentSanitizer.SanitizedBody result = sanitizer.sanitize(
+                "<a href=\"javascript:alert(1)\">клик</a>");
+
+        assertThat(result.body()).isEqualTo("клик");
+    }
+
+    @Test
+    void aggregatesTwoExecutableBlocksIntoOneWarning() {
+        ContentSanitizer.SanitizedBody result = sanitizer.sanitize(
+                "```js-engine\nfirst\n```\n\n```js-engine\nsecond\n```");
+
+        assertThat(result.body()).doesNotContain("first", "second");
+        assertThat(result.warnings()).contains("удалён исполняемый блок: js-engine (2)");
+    }
+
+    @Test
+    void keepsOrdinaryJavaBlockInlineCodeLatexAndTable() {
+        String body = """
+                Обычный блок:
+
+                ```java
+                int x = 1;
+                ```
+
+                Inline `dataview` не исполняется.
+
+                $$E = mc^2$$
+
+                | a | b |
+                |---|---|
+                | 1 | 2 |
+                """;
+
+        ContentSanitizer.SanitizedBody result = sanitizer.sanitize(body);
+
+        assertThat(result.body()).isEqualTo(body);
+        assertThat(result.warnings()).isEmpty();
+    }
 }

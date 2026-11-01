@@ -267,6 +267,99 @@ class NoteRendererTest {
                 .hasMessageContaining("summary");
     }
 
+    @Test
+    void allowsAbsolutePathInsideTildeFencedCode() {
+        NoteDraft draft = draft("Tilde Fence", NoteType.concept, "Two_Pointers", "Тильда-забор",
+                "~~~\n/home/roman/notes\n~~~");
+
+        RenderedNote note = renderer.render(taxonomy, base, NOTE_ID, JOB_REF, draft,
+                false, TODAY, Set.of());
+
+        assertThat(note.markdown()).contains("/home/roman/notes");
+    }
+
+    @Test
+    void allowsAbsolutePathInsideIndentedCode() {
+        NoteDraft draft = draft("Indented Code", NoteType.concept, "Two_Pointers", "Отступ",
+                "    /srv/data/vault");
+
+        RenderedNote note = renderer.render(taxonomy, base, NOTE_ID, JOB_REF, draft,
+                false, TODAY, Set.of());
+
+        assertThat(note.markdown()).contains("/srv/data/vault");
+    }
+
+    @Test
+    void allowsAbsolutePathInsideDoubleBacktickInlineCode() {
+        NoteDraft draft = draft("Inline Double", NoteType.concept, "Two_Pointers", "Инлайн",
+                "путь ``/mnt/hdd/secret`` в коде");
+
+        RenderedNote note = renderer.render(taxonomy, base, NOTE_ID, JOB_REF, draft,
+                false, TODAY, Set.of());
+
+        assertThat(note.markdown()).contains("/mnt/hdd/secret");
+    }
+
+    @Test
+    void keepsWikilinkInsideFencedCode() {
+        NoteDraft draft = draft("Wikilink In Code", NoteType.concept, "Two_Pointers", "В коде",
+                "```java\nString s = \"[[Missing_Note]]\";\n```");
+
+        RenderedNote note = renderer.render(taxonomy, base, NOTE_ID, JOB_REF, draft,
+                false, TODAY, Set.of());
+
+        assertThat(note.markdown()).contains("[[Missing_Note]]");
+        assertThat(note.warnings()).noneMatch(warning -> warning.contains("Missing_Note"));
+    }
+
+    @Test
+    void keepsWikilinkInsideInlineCode() {
+        NoteDraft draft = draft("Wikilink Inline", NoteType.concept, "Two_Pointers", "Инлайн код",
+                "`[[Missing_Note]]`");
+
+        RenderedNote note = renderer.render(taxonomy, base, NOTE_ID, JOB_REF, draft,
+                false, TODAY, Set.of());
+
+        assertThat(note.markdown()).contains("[[Missing_Note]]");
+        assertThat(note.warnings()).noneMatch(warning -> warning.contains("Missing_Note"));
+    }
+
+    @Test
+    void keepsWikilinkInsideMath() {
+        NoteDraft draft = draft("Wikilink Math", NoteType.concept, "Two_Pointers", "Формула",
+                "$$[[0, 1]]$$");
+
+        RenderedNote note = renderer.render(taxonomy, base, NOTE_ID, JOB_REF, draft,
+                false, TODAY, Set.of());
+
+        assertThat(note.markdown()).contains("$$[[0, 1]]$$");
+    }
+
+    @Test
+    void rejectsAbsolutePathInProseStillWorks() {
+        NoteDraft draft = draft("Abs Path Prose", NoteType.concept, "Two_Pointers", "Путь",
+                "/mnt/hdd/secret");
+
+        assertThatThrownBy(() -> renderer.render(taxonomy, base, NOTE_ID, JOB_REF, draft,
+                false, TODAY, Set.of()))
+                .isInstanceOf(ContractViolation.class)
+                .hasMessageContaining("абсолютный путь");
+    }
+
+    @Test
+    void replacesUnknownWikilinkInProse() {
+        NoteDraft draft = draft("Wikilink Prose", NoteType.concept, "Two_Pointers", "Ссылка",
+                "[[Missing_Note]]");
+
+        RenderedNote note = renderer.render(taxonomy, base, NOTE_ID, JOB_REF, draft,
+                false, TODAY, Set.of());
+
+        assertThat(note.markdown()).contains("Missing_Note");
+        assertThat(note.markdown()).doesNotContain("[[Missing_Note]]");
+        assertThat(note.warnings()).anyMatch(warning ->
+                warning.contains("[[Missing_Note]] вырезана"));
+    }
+
     private static NoteDraft draft(
             String title, NoteType type, String topic, String summary, String body) {
         return new NoteDraft(title, type, topic, summary, body, 0.9);

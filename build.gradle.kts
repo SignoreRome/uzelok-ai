@@ -29,6 +29,7 @@ dependencies {
     implementation(libs.spring.ai.starter.model.openai)
     implementation(libs.logstash.logback.encoder)
     implementation(libs.snakeyaml)
+    implementation(libs.commonmark)
 
     testImplementation(libs.spring.boot.starter.test)
     testImplementation(libs.testcontainers.postgresql)

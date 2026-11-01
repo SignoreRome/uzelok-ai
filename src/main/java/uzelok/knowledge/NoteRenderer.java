@@ -32,8 +32,6 @@ public final class NoteRenderer {
 
     private static final int SUMMARY_LIMIT = 150;
     private static final Pattern WIKILINK = Pattern.compile("\\[\\[([^\\]]+)]]");
-    private static final Pattern FENCED_CODE = Pattern.compile("(?s)```.*?```");
-    private static final Pattern INLINE_CODE = Pattern.compile("`[^`\\n]*`");
     private static final Pattern ABSOLUTE_PATH = Pattern.compile(
             "(?:/mnt/|/home/|/srv/|/Users/|agora/)");
 
@@ -164,9 +162,17 @@ public final class NoteRenderer {
     }
 
     private static void rejectAbsolutePaths(String body) {
-        String prose = FENCED_CODE.matcher(body).replaceAll(" ");
-        prose = INLINE_CODE.matcher(prose).replaceAll(" ");
-        Matcher matcher = ABSOLUTE_PATH.matcher(prose);
+        List<MarkdownCode.Range> ranges = MarkdownCode.codeAndMathRanges(body);
+        int position = 0;
+        for (MarkdownCode.Range range : ranges) {
+            rejectAbsolutePathIn(body, position, range.start());
+            position = range.end();
+        }
+        rejectAbsolutePathIn(body, position, body.length());
+    }
+
+    private static void rejectAbsolutePathIn(String body, int from, int to) {
+        Matcher matcher = ABSOLUTE_PATH.matcher(body.substring(from, to));
         if (matcher.find()) {
             throw new ContractViolation("в тексте заметки найден абсолютный путь: "
                     + matcher.group());
@@ -189,8 +195,27 @@ public final class NoteRenderer {
 
     private static String resolveWikilinks(
             String body, Set<String> existingNames, Set<String> warnings) {
-        Matcher matcher = WIKILINK.matcher(body);
-        StringBuilder result = new StringBuilder();
+        List<MarkdownCode.Range> ranges = MarkdownCode.codeAndMathRanges(body);
+        StringBuilder result = new StringBuilder(body.length());
+        int position = 0;
+        for (MarkdownCode.Range range : ranges) {
+            resolveWikilinksIn(body, position, range.start(), result, existingNames, warnings);
+            result.append(body, range.start(), range.end());
+            position = range.end();
+        }
+        resolveWikilinksIn(body, position, body.length(), result, existingNames, warnings);
+        return result.toString();
+    }
+
+    private static void resolveWikilinksIn(
+            String body,
+            int from,
+            int to,
+            StringBuilder result,
+            Set<String> existingNames,
+            Set<String> warnings) {
+        Matcher matcher = WIKILINK.matcher(body.substring(from, to));
+        StringBuilder segment = new StringBuilder();
         while (matcher.find()) {
             String inner = matcher.group(1);
             int pipe = inner.indexOf('|');
@@ -205,15 +230,15 @@ public final class NoteRenderer {
                 lookup = lookup.substring(0, lookup.length() - 3);
             }
             if (existingNames.contains(lookup.toLowerCase(Locale.ROOT))) {
-                matcher.appendReplacement(result, Matcher.quoteReplacement(matcher.group()));
+                matcher.appendReplacement(segment, Matcher.quoteReplacement(matcher.group()));
             } else {
                 warnings.add("ссылка [[" + target + "]] вырезана: заметки нет");
-                matcher.appendReplacement(result,
+                matcher.appendReplacement(segment,
                         Matcher.quoteReplacement(display.isEmpty() ? target : display));
             }
         }
-        matcher.appendTail(result);
-        return result.toString();
+        matcher.appendTail(segment);
+        result.append(segment);
     }
 
     private static String collisionSuffix(String jobRef, UUID noteId) {
