@@ -66,6 +66,7 @@ public final class InMemorySourceItemRepository implements SourceItemRepository 
         return true;
     }
 
+    @Override
     public synchronized Optional<SourceItem> findById(UUID id) {
         return Optional.ofNullable(items.get(id));
     }

@@ -107,6 +107,18 @@ public final class ExternalObsidianStore implements KnowledgeStore {
         return locks.withLock(base.id(), () -> writeLocked(base, note));
     }
 
+    @Override
+    public Set<String> existingNoteNames(KnowledgeBase base) throws ContractViolation {
+        ContractValidator.ContractReport report = validator.validate(base);
+        Path root = Path.of(base.rootPath()).toAbsolutePath().normalize();
+        return uniqueness.existingNames(report.knowledgeRoot(), root);
+    }
+
+    @Override
+    public Taxonomy taxonomy(KnowledgeBase base) throws ContractViolation {
+        return validator.validate(base).taxonomy();
+    }
+
     private WrittenNote writeLocked(KnowledgeBase base, PreparedNote note) {
         ContractValidator.ContractReport report = validator.validate(base);
         Path root = Path.of(base.rootPath()).toAbsolutePath().normalize();
