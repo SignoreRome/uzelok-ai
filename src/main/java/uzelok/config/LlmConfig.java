@@ -1,10 +1,7 @@
 package uzelok.config;
 
-import java.net.Authenticator;
-import java.net.InetSocketAddress;
-import java.net.PasswordAuthentication;
-import java.net.ProxySelector;
 import java.time.Clock;
+import java.time.Duration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import tools.jackson.databind.json.JsonMapper;
@@ -34,25 +31,33 @@ public class LlmConfig {
         ProxySupport.ProxyConfig proxy = ProxySupport.parse(properties.llm().proxyUrl())
                 .orElse(null);
         int timeoutSeconds = properties.llm().timeoutSeconds();
-        if (proxy == null) {
-            return new HttpLlmClient(ProxySelector.getDefault(), jsonMapper, timeoutSeconds);
-        }
-        ProxySelector selector = ProxySelector.of((InetSocketAddress) proxy.proxy().address());
-        Authenticator authenticator = proxy.hasCredentials()
-                ? proxyAuthenticator(proxy.user(), proxy.password()) : null;
-        return new HttpLlmClient(selector, authenticator, jsonMapper, timeoutSeconds);
+        return new HttpLlmClient(okHttpClient(proxy, timeoutSeconds), jsonMapper, timeoutSeconds);
     }
 
-    private static Authenticator proxyAuthenticator(String user, char[] password) {
-        return new Authenticator() {
-            @Override
-            protected PasswordAuthentication getPasswordAuthentication() {
-                if (getRequestorType() != RequestorType.PROXY) {
-                    return null;
-                }
-                return new PasswordAuthentication(user, password);
+    /**
+     * java.net.http не умеет Basic в CONNECT-туннеле (JDK блокирует такие схемы), поэтому
+     * прокси и Proxy-Authorization задаются явно на клиенте OkHttp.
+     */
+    private static okhttp3.OkHttpClient okHttpClient(ProxySupport.ProxyConfig proxy,
+                                                    int timeoutSeconds) {
+        okhttp3.OkHttpClient.Builder builder = new okhttp3.OkHttpClient.Builder()
+                .connectTimeout(Duration.ofSeconds(10))
+                .readTimeout(Duration.ofSeconds(timeoutSeconds))
+                .writeTimeout(Duration.ofSeconds(30))
+                .callTimeout(Duration.ofSeconds(timeoutSeconds + 10L))
+                .retryOnConnectionFailure(true);
+        if (proxy != null) {
+            builder.proxy(proxy.proxy());
+            if (proxy.hasCredentials()) {
+                String user = proxy.user();
+                char[] password = proxy.password();
+                builder.proxyAuthenticator((route, response) -> response.request().newBuilder()
+                        .header("Proxy-Authorization",
+                                okhttp3.Credentials.basic(user, new String(password)))
+                        .build());
             }
-        };
+        }
+        return builder.build();
     }
 
     @Bean

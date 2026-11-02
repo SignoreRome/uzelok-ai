@@ -5,9 +5,12 @@ import java.io.InputStream;
 import java.net.Authenticator;
 import java.net.ProxySelector;
 import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
+import okhttp3.MediaType;
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.RequestBody;
+import okhttp3.Response;
+import okhttp3.ResponseBody;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -32,83 +35,66 @@ public final class HttpLlmClient {
     public record LlmHttpResponse(String content, int inputTokens, int outputTokens, int latencyMs) {
     }
 
-    private final HttpClient client;
+    private final OkHttpClient client;
     private final JsonMapper mapper;
-    private final Duration requestTimeout;
 
     public HttpLlmClient(JsonMapper mapper, int timeoutSeconds) {
-        this(ProxySelector.getDefault(), null, mapper, timeoutSeconds);
+        this(new OkHttpClient(), mapper, timeoutSeconds);
     }
 
-    public HttpLlmClient(ProxySelector proxySelector, JsonMapper mapper, int timeoutSeconds) {
-        this(proxySelector, null, mapper, timeoutSeconds);
-    }
-
-    public HttpLlmClient(ProxySelector proxySelector, Authenticator authenticator, JsonMapper mapper,
-                         int timeoutSeconds) {
-        this(httpClient(proxySelector, authenticator), mapper, timeoutSeconds);
-    }
-
-    public HttpLlmClient(HttpClient client, JsonMapper mapper, int timeoutSeconds) {
+    /**
+     * Транспорт — OkHttp, а не {@code java.net.http}: JDK отказывается отправлять Basic-креды
+     * в CONNECT-туннеле (jdk.http.auth.tunneling.disabledSchemes), и прокси отвечает 407.
+     * Прокси и Proxy-Authorization задаются на клиенте, см. LlmConfig.
+     */
+    public HttpLlmClient(OkHttpClient client, JsonMapper mapper, int timeoutSeconds) {
         this.client = client;
         this.mapper = mapper;
-        this.requestTimeout = Duration.ofSeconds(timeoutSeconds);
-    }
-
-    private static HttpClient httpClient(ProxySelector proxySelector, Authenticator authenticator) {
-        HttpClient.Builder builder = HttpClient.newBuilder()
-                .proxy(proxySelector == null ? ProxySelector.of(null) : proxySelector)
-                .connectTimeout(Duration.ofSeconds(10));
-        if (authenticator != null) {
-            builder.authenticator(authenticator);
-        }
-        return builder.build();
     }
 
     public LlmHttpResponse complete(String baseUrl, String apiKey, String model, String systemPrompt,
                                     String userPrompt, List<Path> images, String schemaName,
                                     String jsonSchema) {
         String body = requestBody(model, systemPrompt, userPrompt, images, schemaName, jsonSchema);
-        HttpRequest request = HttpRequest.newBuilder(endpoint(baseUrl))
-                .timeout(requestTimeout)
-                .header("Authorization", "Bearer " + apiKey)
-                .header("Content-Type", "application/json")
-                .POST(HttpRequest.BodyPublishers.ofString(body))
-                .build();
+        Request request;
+        try {
+            request = new Request.Builder()
+                    .url(endpoint(baseUrl).toString())
+                    .header("Authorization", "Bearer " + apiKey)
+                    .header("Content-Type", "application/json")
+                    .post(RequestBody.create(body, MediaType.get("application/json; charset=utf-8")))
+                    .build();
+        } catch (IllegalArgumentException exception) {
+            throw new LlmCallFailed("некорректный адрес LLM");
+        }
 
         long started = System.nanoTime();
-        HttpResponse<InputStream> response;
-        try {
-            response = client.send(request, HttpResponse.BodyHandlers.ofInputStream());
+        try (Response response = client.newCall(request).execute()) {
+            int latencyMs = (int) ((System.nanoTime() - started) / 1_000_000L);
+            ResponseBody responseBody = response.body();
+            String text;
+            try (InputStream input = responseBody == null
+                    ? InputStream.nullInputStream() : responseBody.byteStream()) {
+                if (response.isSuccessful()) {
+                    byte[] bytes = input.readNBytes(MAX_RESPONSE_BYTES + 1);
+                    if (bytes.length > MAX_RESPONSE_BYTES) {
+                        throw new LlmCallFailed("ответ LLM больше 4 МБ");
+                    }
+                    text = new String(bytes, StandardCharsets.UTF_8);
+                } else {
+                    text = new String(input.readNBytes(ERROR_BODY_LIMIT), StandardCharsets.UTF_8);
+                }
+            }
+            if (!response.isSuccessful()) {
+                throw new LlmCallFailed("LLM вернул HTTP " + response.code() + ": " + truncate(text));
+            }
+            return parse(text, latencyMs);
         } catch (IOException exception) {
             throw new LlmCallFailed("не удалось вызвать LLM: сеть недоступна", exception);
-        } catch (InterruptedException exception) {
-            Thread.currentThread().interrupt();
-            throw new LlmCallFailed("вызов LLM прерван", exception);
         }
-        int latencyMs = (int) ((System.nanoTime() - started) / 1_000_000L);
+    }
 
-        String responseBody;
-        try (InputStream input = response.body()) {
-            if (response.statusCode() < 200 || response.statusCode() >= 300) {
-                responseBody = new String(input.readNBytes(ERROR_BODY_LIMIT),
-                        StandardCharsets.UTF_8);
-            } else {
-                byte[] bytes = input.readNBytes(MAX_RESPONSE_BYTES + 1);
-                if (bytes.length > MAX_RESPONSE_BYTES) {
-                    throw new LlmCallFailed("ответ LLM больше 4 МБ");
-                }
-                responseBody = new String(bytes, StandardCharsets.UTF_8);
-            }
-        } catch (IOException exception) {
-            throw new LlmCallFailed("не удалось прочитать ответ LLM", exception);
-        }
-
-        if (response.statusCode() < 200 || response.statusCode() >= 300) {
-            throw new LlmCallFailed("LLM вернул HTTP " + response.statusCode() + ": "
-                    + truncate(responseBody));
-        }
-
+    private LlmHttpResponse parse(String responseBody, int latencyMs) {
         JsonNode root;
         try {
             root = mapper.readTree(responseBody);
