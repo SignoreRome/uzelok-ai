@@ -27,6 +27,8 @@ import tools.jackson.databind.json.JsonMapper;
 import uzelok.domain.model.AuditRecord;
 import uzelok.domain.model.ChatAccess;
 import uzelok.domain.model.JobStatus;
+import uzelok.domain.model.NoteRecord;
+import uzelok.domain.model.NoteType;
 import uzelok.domain.model.ProcessingJob;
 import uzelok.domain.model.SourceAttachment;
 import uzelok.domain.model.SourceItem;
@@ -158,6 +160,33 @@ class JdbcPersistenceIT {
             executor.shutdownNow();
         }
         assertThat(repository.countBySourceItem(item.id())).isEqualTo(2);
+    }
+
+    @Test
+    void noteUpsertIsIdempotentWhenWritingStepIsRetried() {
+        UUID tenantId = newTenant();
+        UUID knowledgeBaseId = newKnowledgeBase(tenantId);
+        SourceItem item = new JdbcSourceItemRepository(named)
+                .ensure(candidate(tenantId, knowledgeBaseId, 740L, 940L,
+                        SourceKind.TEXT, null, "текст")).item();
+        UUID jobId = new JdbcJobRepository(named)
+                .createIfAbsent(jobCandidate(tenantId, knowledgeBaseId, item.id())).job().id();
+        UUID noteId = UUID.randomUUID();
+        JdbcNoteRepository repository = new JdbcNoteRepository(named);
+        NoteRecord record = new NoteRecord(noteId, tenantId, knowledgeBaseId, jobId,
+                NoteType.source_note, "Заголовок", "Architecture", "Modular_Monolith",
+                "Zametka.md", "40_Knowledge/Architecture/Modular_Monolith/Zametka.md", "hash-1");
+
+        UUID first = repository.upsert(record);
+        UUID second = repository.upsert(new NoteRecord(noteId, tenantId, knowledgeBaseId,
+                record.jobId(), NoteType.source_note, "Заголовок", "Architecture", "Modular_Monolith",
+                "Zametka.md", "40_Knowledge/Architecture/Modular_Monolith/Zametka.md", "hash-2"));
+
+        assertThat(second).isEqualTo(first);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM note WHERE tenant_id = ?",
+                Integer.class, tenantId)).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT content_hash FROM note WHERE id = ?",
+                String.class, first)).isEqualTo("hash-2");
     }
 
     @Test

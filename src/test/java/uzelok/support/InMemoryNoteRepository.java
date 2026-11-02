@@ -62,6 +62,13 @@ public final class InMemoryNoteRepository implements NoteRepository {
                 .count();
     }
 
+    @Override
+    public synchronized Optional<NoteRecord> findByJobId(UUID jobId) {
+        return notes.values().stream()
+                .filter(note -> jobId.equals(note.jobId()))
+                .findFirst();
+    }
+
     public synchronized Optional<NoteRecord> findByFileName(String fileName) {
         return notes.values().stream()
                 .filter(note -> note.fileName().equals(fileName))

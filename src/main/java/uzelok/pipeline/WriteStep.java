@@ -1,7 +1,9 @@
 package uzelok.pipeline;
 
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import uzelok.domain.model.ArtifactKind;
 import uzelok.domain.model.AuditRecord;
@@ -43,6 +45,19 @@ public final class WriteStep {
     }
 
     public WriteResult run(ProcessingJob job) {
+        Optional<NoteRecord> alreadyWritten = notes.findByJobId(job.id());
+        if (alreadyWritten.isPresent()) {
+            NoteRecord note = alreadyWritten.get();
+            Path target = note.relPath() == null ? null : Path.of(note.relPath());
+            if (target != null && java.nio.file.Files.isRegularFile(target)) {
+                // Шаг повторяется после сбоя уведомления: файл уже на месте, второй раз не пишем.
+                return new WriteResult(
+                        new WrittenNote(note.noteId(), note.relPath(), note.contentHash(), false),
+                        new PreparedNote(note.noteId(), note.relPath(), note.fileName(), "",
+                                note.contentHash(), List.of()));
+            }
+        }
+
         JobArtifact draftArtifact = artifacts.findLatest(job.id(), ArtifactKind.DRAFT_JSON)
                 .orElseThrow(() -> new IllegalStateException(
                         "нет артефакта DRAFT_JSON для задачи " + job.id()));

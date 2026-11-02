@@ -22,4 +22,10 @@ public interface NoteRepository {
     Optional<String> latestVersionHash(UUID noteId);
 
     long countByTenant(UUID tenantId);
+
+    /**
+     * Заметка, созданная этой задачей. Нужна для идемпотентности шага WRITING:
+     * повтор после сбоя уведомления не должен писать второй файл.
+     */
+    Optional<NoteRecord> findByJobId(UUID jobId);
 }

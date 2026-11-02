@@ -25,11 +25,34 @@ public class JdbcNoteRepository implements NoteRepository {
             RETURNING id
             """;
 
+    /**
+     * Повтор шага WRITING приходит с тем же {@code id} (он выводится из job), и INSERT упирался
+     * в первичный ключ: {@code ON CONFLICT} покрывал только (knowledge_base_id, file_name).
+     * Поэтому сначала обновляем уже сохранённую заметку — по id или по той же паре.
+     */
+    private static final String UPDATE_EXISTING_NOTE = """
+            UPDATE note
+            SET content_hash = :contentHash,
+                rel_path = :relPath,
+                updated_at = now()
+            WHERE id = :id
+               OR (knowledge_base_id = :knowledgeBaseId AND file_name = :fileName)
+            RETURNING id
+            """;
+
     private static final String APPEND_VERSION = """
             INSERT INTO note_version (note_id, tenant_id, version_no, markdown, content_hash)
             SELECT :noteId, :tenantId, COALESCE(MAX(version_no), 0) + 1, :markdown, :contentHash
             FROM note_version
             WHERE note_id = :noteId
+            """;
+
+    private static final String FIND_BY_JOB = """
+            SELECT id, tenant_id, knowledge_base_id, job_id, type, title, domain, topic,
+                   file_name, rel_path, content_hash
+            FROM note
+            WHERE job_id = :jobId
+            LIMIT 1
             """;
 
     private static final String COUNT_BY_TENANT = """
@@ -52,7 +75,16 @@ public class JdbcNoteRepository implements NoteRepository {
     @Override
     @Transactional
     public UUID upsert(NoteRecord note) {
-        return jdbc.queryForObject(UPSERT_NOTE, new MapSqlParameterSource()
+        MapSqlParameterSource params = params(note);
+        List<UUID> updated = jdbc.queryForList(UPDATE_EXISTING_NOTE, params, UUID.class);
+        if (!updated.isEmpty()) {
+            return updated.getFirst();
+        }
+        return jdbc.queryForObject(UPSERT_NOTE, params, UUID.class);
+    }
+
+    private static MapSqlParameterSource params(NoteRecord note) {
+        return new MapSqlParameterSource()
                 .addValue("id", note.noteId())
                 .addValue("tenantId", note.tenantId())
                 .addValue("knowledgeBaseId", note.knowledgeBaseId())
@@ -63,7 +95,7 @@ public class JdbcNoteRepository implements NoteRepository {
                 .addValue("topic", note.topic())
                 .addValue("fileName", note.fileName())
                 .addValue("relPath", note.relPath())
-                .addValue("contentHash", note.contentHash()), UUID.class);
+                .addValue("contentHash", note.contentHash());
     }
 
     @Override
@@ -84,6 +116,27 @@ public class JdbcNoteRepository implements NoteRepository {
                 new MapSqlParameterSource("noteId", noteId),
                 (rs, rowNum) -> rs.getString("content_hash"));
         return hashes.stream().findFirst();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Optional<NoteRecord> findByJobId(UUID jobId) {
+        List<NoteRecord> found = jdbc.query(FIND_BY_JOB,
+                new MapSqlParameterSource("jobId", jobId),
+                (rs, rowNum) -> new NoteRecord(
+                        rs.getObject("id", UUID.class),
+                        rs.getObject("tenant_id", UUID.class),
+                        rs.getObject("knowledge_base_id", UUID.class),
+                        rs.getObject("job_id", UUID.class),
+                        rs.getString("type") == null ? null
+                                : uzelok.domain.model.NoteType.valueOf(rs.getString("type")),
+                        rs.getString("title"),
+                        rs.getString("domain"),
+                        rs.getString("topic"),
+                        rs.getString("file_name"),
+                        rs.getString("rel_path"),
+                        rs.getString("content_hash")));
+        return found.stream().findFirst();
     }
 
     @Override
