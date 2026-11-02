@@ -6,12 +6,15 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import uzelok.domain.exception.ContractViolation;
 import uzelok.domain.model.KnowledgeBase;
+import uzelok.domain.model.KnowledgeBaseKind;
 import uzelok.domain.model.Taxonomy;
+import uzelok.domain.port.VaultInspector;
 
-public final class ContractValidator {
+public final class ContractValidator implements VaultInspector {
 
     private final TaxonomyLoader taxonomyLoader;
 
@@ -83,6 +86,32 @@ public final class ContractValidator {
         }
 
         return new ContractReport(knowledgeRoot, taxonomy, warnings);
+    }
+
+    @Override
+    public List<String> violations(Path rootPath) {
+        if (rootPath == null) {
+            return List.of("путь базы не задан");
+        }
+        if (!rootPath.isAbsolute()) {
+            return List.of("нужен абсолютный путь к базе: " + rootPath);
+        }
+        Path root = rootPath.normalize();
+        if (!Files.isDirectory(root)) {
+            return List.of("каталог базы не найден: " + root);
+        }
+        KnowledgeBase base = new KnowledgeBase(
+                UUID.randomUUID(),
+                KnowledgeBaseKind.INTERNAL_DIR,
+                root.toString(),
+                "40_Knowledge/_meta/taxonomy.yaml",
+                "40_Knowledge/_Inbox");
+        try {
+            validate(base);
+            return List.of();
+        } catch (ContractViolation exception) {
+            return List.of(exception.getMessage());
+        }
     }
 
     private static Path resolveInside(Path root, String relativePath) {

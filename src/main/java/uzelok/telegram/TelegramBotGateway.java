@@ -7,6 +7,7 @@ import java.io.InputStream;
 import java.net.URI;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
@@ -81,6 +82,20 @@ public final class TelegramBotGateway implements TelegramGateway {
         SendDocument document = SendDocument.builder()
                 .chatId(chatId)
                 .document(new InputFile(new ByteArrayInputStream(content), fileName))
+                .caption(caption)
+                .build();
+        try {
+            return client.execute(document).getMessageId();
+        } catch (org.telegram.telegrambots.meta.exceptions.TelegramApiException exception) {
+            throw new TelegramDeliveryException("не удалось отправить документ в Telegram", exception);
+        }
+    }
+
+    @Override
+    public long sendDocumentFile(long chatId, String fileName, Path file, String caption) {
+        SendDocument document = SendDocument.builder()
+                .chatId(chatId)
+                .document(new InputFile(file.toFile(), fileName))
                 .caption(caption)
                 .build();
         try {

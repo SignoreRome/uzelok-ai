@@ -18,6 +18,7 @@ import uzelok.support.InMemoryTelegramGateway;
 import uzelok.support.MutableClock;
 import uzelok.support.RecordingAuditRepository;
 import uzelok.support.TelegramUpdates;
+import uzelok.support.StubOnboardingHandler;
 
 class CallbackHandlerTest {
 
@@ -46,8 +47,8 @@ class CallbackHandlerTest {
             handled.incrementAndGet();
             return ActionOutcome.done("Выполнено.");
         };
-        handler = new CallbackHandler(access, actions, actionHandler, telegram, audit,
-                new MutableClock(NOW));
+        handler = new CallbackHandler(access, actions, actionHandler, new StubOnboardingHandler(),
+                telegram, new Messages(), audit, new MutableClock(NOW));
     }
 
     @Test

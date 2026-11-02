@@ -7,7 +7,7 @@ import uzelok.domain.port.KnowledgeBaseRepository;
 
 public final class FixedKnowledgeBaseRepository implements KnowledgeBaseRepository {
 
-    private final KnowledgeBase base;
+    private KnowledgeBase base;
 
     public FixedKnowledgeBaseRepository(KnowledgeBase base) {
         this.base = base;
@@ -16,5 +16,18 @@ public final class FixedKnowledgeBaseRepository implements KnowledgeBaseReposito
     @Override
     public Optional<KnowledgeBase> findByTenantId(UUID tenantId) {
         return Optional.ofNullable(base);
+    }
+
+    @Override
+    public Optional<KnowledgeBase> findByRootPath(String rootPath) {
+        return base != null && base.rootPath().equals(rootPath)
+                ? Optional.of(base)
+                : Optional.empty();
+    }
+
+    @Override
+    public KnowledgeBase save(UUID tenantId, KnowledgeBase updated) {
+        this.base = updated;
+        return updated;
     }
 }

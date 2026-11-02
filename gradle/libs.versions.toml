@@ -12,6 +12,9 @@ commonmark = "0.32.0"
 spring-boot-starter = { module = "org.springframework.boot:spring-boot-starter" }
 spring-boot-starter-jdbc = { module = "org.springframework.boot:spring-boot-starter-jdbc" }
 spring-boot-starter-test = { module = "org.springframework.boot:spring-boot-starter-test" }
+# Boot 4 развёл автоконфигурации по модулям: FlywayAutoConfiguration живёт здесь,
+# без него spring.flyway.enabled молчит и миграции не применяются при старте.
+spring-boot-flyway = { module = "org.springframework.boot:spring-boot-flyway" }
 postgresql = { module = "org.postgresql:postgresql" }
 flyway-core = { module = "org.flywaydb:flyway-core" }
 flyway-database-postgresql = { module = "org.flywaydb:flyway-database-postgresql" }

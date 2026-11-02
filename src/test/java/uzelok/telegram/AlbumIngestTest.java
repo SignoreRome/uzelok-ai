@@ -27,6 +27,8 @@ import uzelok.support.MutableClock;
 import uzelok.support.RecordingAuditRepository;
 import uzelok.support.TelegramUpdates;
 import uzelok.support.TestImages;
+import uzelok.support.StubOnboardingHandler;
+import uzelok.support.StubVaultExporter;
 
 class AlbumIngestTest {
 
@@ -68,15 +70,18 @@ class AlbumIngestTest {
         Messages messages = new Messages();
         CommandHandler commands = new CommandHandler(telegram, messages, "test_bot", Map.of(),
                 access, jobs, new StatsService(new InMemoryNoteRepository(), jobs,
-                        new InMemoryLlmCallRepository()), clock);
+                        new InMemoryLlmCallRepository()), bases, new StubVaultExporter(), audit,
+                clock);
         AttachmentReceiver receiver = new AttachmentReceiver(
                 telegramProps,
-                new UzelokProperties.Storage(artifacts.toString()),
+                new UzelokProperties.Storage(artifacts.toString(),
+                        "/var/lib/uzelok/vaults", "/var/lib/uzelok/exports"),
                 attachments,
                 telegram,
                 messages);
         MessageHandler handler = new MessageHandler(access, bases, source, attachments, jobs, audit, telegram,
-                commands, receiver, clock, limits, telegramProps, messages);
+                commands, receiver, clock, limits, telegramProps, messages,
+                new StubOnboardingHandler());
 
         Instant previousNextRun = null;
         for (int index = 0; index < 3; index++) {
@@ -132,15 +137,18 @@ class AlbumIngestTest {
         Messages messages = new Messages();
         CommandHandler commands = new CommandHandler(telegram, messages, "test_bot", Map.of(),
                 access, jobs, new StatsService(new InMemoryNoteRepository(), jobs,
-                        new InMemoryLlmCallRepository()), clock);
+                        new InMemoryLlmCallRepository()), bases, new StubVaultExporter(), audit,
+                clock);
         AttachmentReceiver receiver = new AttachmentReceiver(
                 telegramProps,
-                new UzelokProperties.Storage(artifacts.toString()),
+                new UzelokProperties.Storage(artifacts.toString(),
+                        "/var/lib/uzelok/vaults", "/var/lib/uzelok/exports"),
                 attachments,
                 telegram,
                 messages);
         MessageHandler handler = new MessageHandler(access, bases, source, attachments, jobs, audit, telegram,
-                commands, receiver, clock, limits, telegramProps, messages);
+                commands, receiver, clock, limits, telegramProps, messages,
+                new StubOnboardingHandler());
 
         for (int index = 0; index < 3; index++) {
             clock.setInstant(Instant.parse("2026-01-15T10:00:00Z").plusSeconds(index));

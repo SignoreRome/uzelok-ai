@@ -22,6 +22,7 @@ import uzelok.domain.model.AuditRecord;
 import uzelok.domain.model.ChatAccess;
 import uzelok.domain.model.JobStatus;
 import uzelok.domain.model.KnowledgeBase;
+import uzelok.domain.model.OnboardingResult;
 import uzelok.domain.model.ProcessingJob;
 import uzelok.domain.model.SourceItem;
 import uzelok.domain.model.SourceKind;
@@ -31,6 +32,7 @@ import uzelok.domain.port.AuditRepository;
 import uzelok.domain.port.JobCreation;
 import uzelok.domain.port.JobRepository;
 import uzelok.domain.port.KnowledgeBaseRepository;
+import uzelok.domain.port.OnboardingHandler;
 import uzelok.domain.port.SourceItemCreation;
 import uzelok.domain.port.SourceItemRepository;
 import uzelok.domain.port.TelegramGateway;
@@ -52,12 +54,14 @@ public final class MessageHandler {
     private final UzelokProperties.Limits limits;
     private final UzelokProperties.Telegram telegramProps;
     private final Messages messages;
+    private final OnboardingHandler onboarding;
 
     public MessageHandler(AccessRepository access, KnowledgeBaseRepository bases, SourceItemRepository source,
                           AttachmentRepository attachments, JobRepository jobs, AuditRepository audit,
                           TelegramGateway telegram, CommandHandler commands, AttachmentReceiver receiver,
                           Clock clock, UzelokProperties.Limits limits,
-                          UzelokProperties.Telegram telegramProps, Messages messages) {
+                          UzelokProperties.Telegram telegramProps, Messages messages,
+                          OnboardingHandler onboarding) {
         this.access = access;
         this.bases = bases;
         this.source = source;
@@ -71,6 +75,7 @@ public final class MessageHandler {
         this.limits = limits;
         this.telegramProps = telegramProps;
         this.messages = messages;
+        this.onboarding = onboarding;
     }
 
     public void handle(Update update) {
@@ -103,15 +108,28 @@ public final class MessageHandler {
         }
 
         String text = message.getText();
-        if (commands.handle(chatId, text)) {
+        Optional<KnowledgeBase> base = bases.findByTenantId(chatAccess.tenantId());
+        boolean awaiting = base.isEmpty() && text != null && !text.isBlank()
+                && onboarding.awaitingPath(chatId);
+        if (awaiting && commands.handles(text)) {
+            onboarding.reset(chatId);
+            awaiting = false;
+        }
+        if (!awaiting && commands.handle(chatId, text)) {
             return;
         }
 
-        Optional<KnowledgeBase> base = bases.findByTenantId(chatAccess.tenantId());
         if (base.isEmpty()) {
+            if (awaiting && text != null && !text.isBlank()) {
+                OnboardingResult result = onboarding.connect(chatId, chatAccess.tenantId(), text);
+                telegram.sendMessage(chatId, messages.text(result.messageKey(),
+                        result.args().toArray()), null);
+                return;
+            }
             audit.record(new AuditRecord(chatAccess.tenantId(), chatId, "onboarding_required",
                     "tenant", chatAccess.tenantId(), Map.of("reason", "knowledge_base_missing")));
-            telegram.sendMessage(chatId, messages.text("base.none"), null);
+            telegram.sendMessage(chatId, messages.text("base.prompt"),
+                    Keyboards.onboarding(messages));
             return;
         }
 

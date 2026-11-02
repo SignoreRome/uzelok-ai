@@ -45,6 +45,8 @@ class UzelokPropertiesTest {
             assertThat(properties.telegram().maxImagePixels()).isEqualTo(30_000_000L);
 
             assertThat(properties.storage().artifactsDir()).isEqualTo("/var/lib/uzelok/artifacts");
+            assertThat(properties.storage().vaultsDir()).isEqualTo("/var/lib/uzelok/vaults");
+            assertThat(properties.storage().exportsDir()).isEqualTo("/var/lib/uzelok/exports");
             assertThat(properties.limits().jobsPerDay()).isEqualTo(20);
             assertThat(properties.limits().jobsPerHour()).isEqualTo(5);
             assertThat(properties.limits().attachmentTtlHours()).isEqualTo(72);
@@ -84,6 +86,8 @@ class UzelokPropertiesTest {
             assertThat(properties.knowledge().tmpDir()).isEqualTo(".uzelok-tmp");
             assertThat(properties.knowledge().confidenceThreshold()).isEqualTo(0.55);
             assertThat(properties.knowledge().maxFileNameLength()).isEqualTo(60);
+            assertThat(properties.knowledge().exportMaxBytes()).isEqualTo(50_000_000L);
+            assertThat(properties.knowledge().exportMaxFiles()).isEqualTo(5000);
 
             assertThat(properties.worker().leaseMinutes()).isEqualTo(10);
             assertThat(properties.worker().maxAttempts()).isEqualTo(3);

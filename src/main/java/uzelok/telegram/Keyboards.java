@@ -17,6 +17,12 @@ public final class Keyboards {
                         button("❌ Отмена", cancelToken))));
     }
 
+    public static InlineKeyboard onboarding(Messages messages) {
+        return new InlineKeyboard(List.of(
+                List.of(new InlineButton(messages.text("base.button.create"), "onb:create"),
+                        new InlineButton(messages.text("base.button.connect"), "onb:connect"))));
+    }
+
     private static InlineButton button(String text, String token) {
         return new InlineButton(text, "act:" + token);
     }

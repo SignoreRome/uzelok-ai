@@ -70,6 +70,16 @@ class LayerRulesTest {
     }
 
     @Test
+    void knowledgeDoesNotDependOnConfig() {
+        noClasses()
+                .that().resideInAPackage("uzelok.knowledge..")
+                .should().dependOnClassesThat()
+                .resideInAPackage("uzelok.config..")
+                .allowEmptyShould(true)
+                .check(MAIN_CLASSES);
+    }
+
+    @Test
     void telegramDoesNotDependOnConfig() {
         noClasses()
                 .that().resideInAPackage("uzelok.telegram..")

@@ -1,5 +1,9 @@
 package uzelok.support;
 
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -20,16 +24,20 @@ public final class InMemoryTelegramGateway implements TelegramGateway {
     public record SentDocument(long chatId, String fileName, byte[] content, String caption) {
     }
 
+    public record SentFile(long chatId, String fileName, long sizeBytes, String caption) {
+    }
+
     private final List<SentMessage> sent = new ArrayList<>();
     private final List<EditedMessage> edited = new ArrayList<>();
     private final List<SentDocument> documents = new ArrayList<>();
-    private final Map<String, byte[]> files = new HashMap<>();
+    private final List<SentFile> files = new ArrayList<>();
+    private final Map<String, byte[]> stored = new HashMap<>();
     private final List<String> downloadCalls = new ArrayList<>();
     private long nextMessageId = 1000;
     private RuntimeException downloadFailure;
 
     public InMemoryTelegramGateway putFile(String fileId, byte[] bytes) {
-        files.put(fileId, bytes);
+        stored.put(fileId, bytes);
         return this;
     }
 
@@ -57,12 +65,25 @@ public final class InMemoryTelegramGateway implements TelegramGateway {
     }
 
     @Override
+    public synchronized long sendDocumentFile(long chatId, String fileName, Path file,
+                                              String caption) {
+        long size;
+        try {
+            size = Files.size(file);
+        } catch (IOException exception) {
+            throw new UncheckedIOException(exception);
+        }
+        files.add(new SentFile(chatId, fileName, size, caption));
+        return nextMessageId++;
+    }
+
+    @Override
     public synchronized byte[] download(String fileId, long maxBytes) {
         downloadCalls.add(fileId);
         if (downloadFailure != null) {
             throw downloadFailure;
         }
-        byte[] bytes = files.get(fileId);
+        byte[] bytes = stored.get(fileId);
         if (bytes == null) {
             throw new IllegalStateException("в памяти нет файла " + fileId);
         }
@@ -82,6 +103,10 @@ public final class InMemoryTelegramGateway implements TelegramGateway {
 
     public synchronized List<SentDocument> documents() {
         return List.copyOf(documents);
+    }
+
+    public synchronized List<SentFile> files() {
+        return List.copyOf(files);
     }
 
     public synchronized List<String> downloadCalls() {

@@ -21,6 +21,7 @@ repositories {
 dependencies {
     implementation(libs.spring.boot.starter)
     implementation(libs.spring.boot.starter.jdbc)
+    implementation(libs.spring.boot.flyway)
     implementation(libs.postgresql)
     implementation(libs.flyway.core)
     implementation(libs.flyway.database.postgresql)

@@ -424,3 +424,23 @@ export.failed=Не удалось собрать архив: {0}
 - Живой прогон: бот без базы предлагает меню; «Создать новую» создаёт каталог и базу; `/export`
   присылает zip, распаковка содержит `40_Knowledge/_meta/taxonomy.yaml` и заметки; линтер на
   созданной базе — 0.
+
+## Дополнения по итогам работы
+
+- **Spring Boot 4 не применял миграции.** `FlywayAutoConfiguration` в Boot 4 живёт в отдельном модуле
+  `org.springframework.boot:spring-boot-flyway`; до этапа 4 его не было в зависимостях, поэтому
+  `spring.flyway.enabled` ничего не делал, а `V1..V4` в базах появились вручную. Модуль подключён
+  (`gradle/libs.versions.toml`, `build.gradle.kts`), `V5__onboarding_session.sql` применяется при
+  старте — проверено `scripts/smoke-boot.sh` и `select version from flyway_schema_history`.
+- **`knowledge` больше не зависит от `config`.** Сторы и `DirVaultStore` принимают `VaultOptions`
+  (tmp-каталог, порог уверенности) вместо `UzelokProperties.Knowledge`; правило добавлено в
+  `LayerRulesTest`.
+- **Онбординг защищён от перехвата базы:** повторный `createInternal` при уже подключённой базе
+  возвращает `base.already`; `connect` отказывает на каталог внутри `<vaults-dir>` другого тенанта и на
+  путь, уже зарегистрированный другим тенантом (`base.foreign_vault`); ожидание пути изымается атомарно
+  (`consumeAwaitPath`), истёкшее — `base.expectation_expired`. `INSERT ... ON CONFLICT (tenant_id)` при
+  повторной регистрации не меняет `kind`/`root_path`.
+- **Экспорт ограничен и убирает за собой:** `uzelok.knowledge.export-max-files` (5000), отказ на
+  недопустимых путях в архиве (`\`, `..`, пустой сегмент), пропуск симлинков и нерегулярных файлов с
+  предупреждением, удаление временного каталога при любой ошибке сборки.
+

@@ -20,6 +20,8 @@ uzelok:
     max-image-pixels: 30000000
   storage:
     artifacts-dir: ${UZELOK_ARTIFACTS_DIR:/var/lib/uzelok/artifacts}
+    vaults-dir: ${UZELOK_VAULTS_DIR:/var/lib/uzelok/vaults}
+    exports-dir: ${UZELOK_EXPORTS_DIR:/var/lib/uzelok/exports}
   limits:
     jobs-per-day: 20
     jobs-per-hour: 5
@@ -62,6 +64,8 @@ uzelok:
     tmp-dir: .uzelok-tmp
     confidence-threshold: 0.55
     max-file-name-length: 60
+    export-max-bytes: 50000000
+    export-max-files: 5000
   worker:
     lease-minutes: 10
     max-attempts: 3

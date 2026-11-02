@@ -11,7 +11,6 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.UUID;
 import java.util.stream.Stream;
-import uzelok.config.UzelokProperties;
 import uzelok.domain.model.KnowledgeBase;
 import uzelok.domain.model.KnowledgeBaseKind;
 
@@ -63,14 +62,8 @@ final class VaultFixture {
                 INBOX_REL_PATH);
     }
 
-    static UzelokProperties.Knowledge properties(String lintCommand) {
-        return new UzelokProperties.Knowledge(
-                lintCommand,
-                60,
-                "src/test/resources/lint-fixtures",
-                ".uzelok-tmp",
-                0.55,
-                60);
+    static VaultOptions options() {
+        return new VaultOptions(".uzelok-tmp", 0.55);
     }
 
     static ExternalObsidianStore store(String lintCommand) {
@@ -79,7 +72,7 @@ final class VaultFixture {
 
     static ExternalObsidianStore store(String lintCommand, Clock clock) {
         return new ExternalObsidianStore(
-                properties(lintCommand),
+                options(),
                 new ContractValidator(),
                 new NameUniqueness(new GitIndex()),
                 new FileNamePolicy(60),
