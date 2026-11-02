@@ -31,6 +31,7 @@ public final class HttpLlmClient {
     private static final int MAX_RESPONSE_BYTES = 4 * 1024 * 1024;
     private static final int ERROR_BODY_LIMIT = 500;
     private static final int MAX_TOKENS = 8192;
+    private static final String USER_AGENT = "uzelok/0.1";
 
     public record LlmHttpResponse(String content, int inputTokens, int outputTokens, int latencyMs) {
     }
@@ -55,13 +56,29 @@ public final class HttpLlmClient {
     public LlmHttpResponse complete(String baseUrl, String apiKey, String model, String systemPrompt,
                                     String userPrompt, List<Path> images, String schemaName,
                                     String jsonSchema) {
+        return complete(baseUrl, apiKey, model, systemPrompt, userPrompt, images, schemaName,
+                jsonSchema, null);
+    }
+
+    /**
+     * {@code sessionId} уходит в {@code x-opencode-session}: opencode-go требует стабильный id
+     * на диалог (без него 400 MissingSessionID), он же даёт кэш промпта при повторных шагах.
+     */
+    public LlmHttpResponse complete(String baseUrl, String apiKey, String model, String systemPrompt,
+                                    String userPrompt, List<Path> images, String schemaName,
+                                    String jsonSchema, String sessionId) {
         String body = requestBody(model, systemPrompt, userPrompt, images, schemaName, jsonSchema);
         Request request;
         try {
-            request = new Request.Builder()
+            Request.Builder builder = new Request.Builder()
                     .url(endpoint(baseUrl).toString())
                     .header("Authorization", "Bearer " + apiKey)
-                    .header("Content-Type", "application/json")
+                    .header("User-Agent", USER_AGENT)
+                    .header("Content-Type", "application/json");
+            if (sessionId != null && !sessionId.isBlank()) {
+                builder.header("x-opencode-session", sessionId);
+            }
+            request = builder
                     .post(RequestBody.create(body, MediaType.get("application/json; charset=utf-8")))
                     .build();
         } catch (IllegalArgumentException exception) {

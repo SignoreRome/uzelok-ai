@@ -78,6 +78,13 @@ public final class OpenAiCompatibleLlmGateway implements LlmGateway {
             return parseExtraction(cached.get());
         }
         checkBudget(context.tenantId());
+        if (images.isEmpty() && text != null && !text.isBlank()) {
+            // Текстовый материал уже расшифрован: транскрибировать нечего, нужны только тезисы.
+            // Промпт распознавания на таком входе даёт пустой transcript и валит контракт.
+            return call(route, context, step, prompts.theses(), text, List.of(), "theses",
+                    StructuredSchemas.THESES,
+                    content -> parseTheses(text, content));
+        }
         return call(route, context, step, prompts.extract(),
                 text == null ? "" : text, images, "extract", StructuredSchemas.EXTRACT,
                 this::parseExtraction);
@@ -121,7 +128,8 @@ public final class OpenAiCompatibleLlmGateway implements LlmGateway {
             HttpLlmClient.LlmHttpResponse response;
             try {
                 response = client.complete(route.baseUrl(), route.apiKey(), model, systemPrompt,
-                        userPrompt, images, schemaName, jsonSchema);
+                        userPrompt, images, schemaName, jsonSchema,
+                        "uzelok-" + context.jobId());
             } catch (LlmCallFailed failure) {
                 lastFailure = failure;
                 continue;
@@ -132,7 +140,7 @@ public final class OpenAiCompatibleLlmGateway implements LlmGateway {
                 parsed = parser.apply(response.content());
             } catch (LlmContractViolation violation) {
                 recordFailure(context, step, route, model, requestKey, response.inputTokens(),
-                        response.outputTokens(), response.latencyMs());
+                        response.outputTokens(), response.latencyMs(), response.content());
                 throw violation;
             }
             BigDecimal cost = cost(route.provider(), model, response.inputTokens(),
@@ -157,12 +165,17 @@ public final class OpenAiCompatibleLlmGateway implements LlmGateway {
             return parsed;
         }
 
-        recordFailure(context, step, route, lastModel, lastRequestKey, 0, 0, 0);
+        recordFailure(context, step, route, lastModel, lastRequestKey, 0, 0, 0, null);
         throw lastFailure == null ? new LlmCallFailed("LLM не вернул ответ") : lastFailure;
     }
 
+    /**
+     * {@code responseText} сохраняем и при провале контракта: без сырого ответа модель невозможно
+     * обвинить или оправдать, а в лог его писать нельзя (там материал пользователя).
+     */
     private void recordFailure(LlmContext context, String step, LlmRouter.Route route, String model,
-                               String requestKey, int inputTokens, int outputTokens, int latencyMs) {
+                               String requestKey, int inputTokens, int outputTokens, int latencyMs,
+                               String responseText) {
         calls.record(new LlmCallRecord(
                 context.tenantId(),
                 context.jobId(),
@@ -176,7 +189,7 @@ public final class OpenAiCompatibleLlmGateway implements LlmGateway {
                 BigDecimal.ZERO.setScale(6, RoundingMode.HALF_UP),
                 latencyMs,
                 false,
-                null));
+                responseText));
     }
 
     private void checkBudget(java.util.UUID tenantId) {
@@ -248,6 +261,23 @@ public final class OpenAiCompatibleLlmGateway implements LlmGateway {
         existingNames.stream().sorted().forEach(names::add);
         root.put("confidence", extraction.confidence());
         return mapper.writeValueAsString(root);
+    }
+
+    private Extraction parseTheses(String sourceText, String content) {
+        JsonNode root = readObject(content);
+        double confidence = requiredConfidence(root, "confidence");
+        JsonNode thesesNode = root.path("theses");
+        if (!thesesNode.isArray()) {
+            throw new LlmContractViolation("поле theses должно быть массивом");
+        }
+        List<Thesis> theses = new ArrayList<>();
+        for (JsonNode node : thesesNode) {
+            theses.add(new Thesis(requiredText(node, "text"), requiredConfidence(node, "confidence")));
+        }
+        if (theses.isEmpty()) {
+            throw new LlmContractViolation("поле theses не должно быть пустым");
+        }
+        return new Extraction(sourceText, theses, List.of(), confidence);
     }
 
     private Extraction parseExtraction(String content) {

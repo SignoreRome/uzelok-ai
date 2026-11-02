@@ -46,7 +46,34 @@ public final class StructuredSchemas {
             }
             """;
 
+    public static final String THESES = """
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["theses", "confidence"],
+              "properties": {
+                "theses": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["text", "confidence"],
+                    "properties": {
+                      "text": {"type": "string"},
+                      "confidence": {"type": "number", "minimum": 0, "maximum": 1}
+                    }
+                  }
+                },
+                "confidence": {"type": "number", "minimum": 0, "maximum": 1}
+              }
+            }
+            """;
+
     public StructuredSchemas() {
+    }
+
+    public static String theses() {
+        return THESES;
     }
 
     public static String extract() {
