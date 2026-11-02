@@ -1,6 +1,11 @@
 package uzelok.config;
 
 import java.time.Clock;
+import java.net.http.HttpClient;
+import java.net.ProxySelector;
+import java.net.PasswordAuthentication;
+import java.net.InetSocketAddress;
+import java.net.Authenticator;
 import java.time.Duration;
 import java.util.List;
 import okhttp3.Credentials;
@@ -85,11 +90,34 @@ public class TelegramConfig {
     @Bean
     public TelegramGateway telegramGateway(ObjectProvider<TelegramClient> clients,
                                            UzelokProperties properties) {
+        // см. строку с download: файлы качаются java.net.http, ему нужен свой прокси
         TelegramClient client = clients.getIfAvailable();
         if (client == null) {
             return new UnavailableTelegramGateway();
         }
-        return new TelegramBotGateway(client, properties.telegram().botToken());
+        return new TelegramBotGateway(client, properties.telegram().botToken(),
+                downloadHttpClient(properties));
+    }
+
+    private static HttpClient downloadHttpClient(UzelokProperties properties) {
+        HttpClient.Builder builder = HttpClient.newBuilder()
+                .connectTimeout(Duration.ofSeconds(10));
+        ProxySupport.ProxyConfig proxy = ProxySupport.parse(properties.telegram().proxyUrl())
+                .orElse(null);
+        if (proxy != null) {
+            builder.proxy(ProxySelector.of((InetSocketAddress) proxy.proxy().address()));
+            if (proxy.hasCredentials()) {
+                String user = proxy.user();
+                char[] password = proxy.password();
+                builder.authenticator(new Authenticator() {
+                    @Override
+                    protected PasswordAuthentication getPasswordAuthentication() {
+                        return new PasswordAuthentication(user, password);
+                    }
+                });
+            }
+        }
+        return builder.build();
     }
 
     @Bean

@@ -33,11 +33,20 @@ public final class TelegramBotGateway implements TelegramGateway {
     private final HttpClient httpClient;
 
     public TelegramBotGateway(TelegramClient client, String botToken) {
+        this(client, botToken, HttpClient.newBuilder()
+                .connectTimeout(java.time.Duration.ofSeconds(10))
+                .build());
+    }
+
+    /**
+     * Скачивание файлов Bot API идёт мимо библиотеки, поэтому клиенту нужен тот же прокси,
+     * что и остальному трафику: иначе в сетях без прямого доступа к api.telegram.org
+     * приём фото и документов падает с TelegramDeliveryException.
+     */
+    public TelegramBotGateway(TelegramClient client, String botToken, HttpClient httpClient) {
         this.client = client;
         this.botToken = botToken;
-        this.httpClient = HttpClient.newBuilder()
-                .connectTimeout(CONNECT_TIMEOUT)
-                .build();
+        this.httpClient = httpClient;
     }
 
     @Override
