@@ -1,6 +1,11 @@
 package uzelok.config;
 
 import java.time.Clock;
+import java.time.Duration;
+import java.util.List;
+import okhttp3.Credentials;
+import okhttp3.Protocol;
+import okhttp3.OkHttpClient;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -35,13 +40,46 @@ public class TelegramConfig {
         return new Messages();
     }
 
+    /**
+     * Один клиент на отправку и на long polling: без прямого доступа к api.telegram.org
+     * прокси обязан быть у обоих, иначе поллер падает с "Network is unreachable".
+     */
+    /**
+     * Один клиент на отправку и на long polling. Read timeout обязан быть больше poll-timeout,
+     * иначе getUpdates обрывается раньше ответа Telegram (дефолт OkHttp — 10 с). HTTP/2 принудительно
+     * понижен до 1.1: часть HTTP-прокси ломает длинные CONNECT-стримы.
+     */
     @Bean
-    public TelegramClient telegramClient(UzelokProperties properties) {
+    public OkHttpClient telegramHttpClient(UzelokProperties properties) {
+        Duration readTimeout = Duration.ofSeconds(properties.telegram().pollTimeoutSeconds() + 30L);
+        OkHttpClient.Builder builder = new OkHttpClient.Builder()
+                .connectTimeout(Duration.ofSeconds(20))
+                .readTimeout(readTimeout)
+                .writeTimeout(Duration.ofSeconds(30))
+                .protocols(List.of(Protocol.HTTP_1_1))
+                .retryOnConnectionFailure(true);
+        ProxySupport.ProxyConfig proxy = ProxySupport.parse(properties.telegram().proxyUrl())
+                .orElse(null);
+        if (proxy != null) {
+            builder.proxy(proxy.proxy());
+            if (proxy.hasCredentials()) {
+                String user = proxy.user();
+                char[] password = proxy.password();
+                builder.proxyAuthenticator((route, response) -> response.request().newBuilder()
+                        .header("Proxy-Authorization", Credentials.basic(user, new String(password)))
+                        .build());
+            }
+        }
+        return builder.build();
+    }
+
+    @Bean
+    public TelegramClient telegramClient(UzelokProperties properties, OkHttpClient telegramHttpClient) {
         String token = properties.telegram().botToken();
         if (token == null || token.isBlank()) {
             return null;
         }
-        return new OkHttpTelegramClient(token);
+        return new OkHttpTelegramClient(telegramHttpClient, token);
     }
 
     @Bean
@@ -106,8 +144,9 @@ public class TelegramConfig {
     }
 
     @Bean
-    public TelegramPoller telegramPoller(UzelokProperties properties, UpdateRouter router) {
-        return new TelegramPoller(properties.telegram(), router);
+    public TelegramPoller telegramPoller(UzelokProperties properties, UpdateRouter router,
+                                         OkHttpClient telegramHttpClient) {
+        return new TelegramPoller(properties.telegram(), router, telegramHttpClient);
     }
 
     @Bean

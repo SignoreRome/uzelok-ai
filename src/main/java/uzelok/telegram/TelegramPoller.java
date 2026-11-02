@@ -4,6 +4,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.telegram.telegrambots.longpolling.BotSession;
 import org.telegram.telegrambots.longpolling.TelegramBotsLongPollingApplication;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import okhttp3.OkHttpClient;
 import org.telegram.telegrambots.meta.TelegramUrl;
 import org.telegram.telegrambots.meta.api.methods.updates.GetUpdates;
 import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
@@ -15,13 +17,24 @@ public final class TelegramPoller {
 
     private final UzelokProperties.Telegram props;
     private final UpdateRouter router;
+    private final OkHttpClient httpClient;
 
     private TelegramBotsLongPollingApplication application;
     private BotSession session;
 
     public TelegramPoller(UzelokProperties.Telegram props, UpdateRouter router) {
+        this(props, router, null);
+    }
+
+    /**
+     * {@code httpClient} нужен, чтобы long polling ходил через тот же прокси, что и отправка:
+     * библиотека создаёт собственный клиент, если его не передать, и в сетях без прямого доступа
+     * к api.telegram.org падает с {@code Network is unreachable}.
+     */
+    public TelegramPoller(UzelokProperties.Telegram props, UpdateRouter router, OkHttpClient httpClient) {
         this.props = props;
         this.router = router;
+        this.httpClient = httpClient;
     }
 
     public synchronized void start() {
@@ -32,7 +45,9 @@ public final class TelegramPoller {
         if (application != null) {
             return;
         }
-        TelegramBotsLongPollingApplication candidate = new TelegramBotsLongPollingApplication();
+        TelegramBotsLongPollingApplication candidate = httpClient == null
+                ? new TelegramBotsLongPollingApplication()
+                : new TelegramBotsLongPollingApplication(ObjectMapper::new, () -> httpClient);
         try {
             session = candidate.registerBot(
                     props.botToken(),

@@ -50,7 +50,7 @@ class AlbumIngestTest {
         InMemoryAccessRepository access = new InMemoryAccessRepository()
                 .add(CHAT_ID, new ChatAccess(TENANT_ID, APP_USER_ID, FROM_ID, true));
         UzelokProperties.Telegram telegramProps = new UzelokProperties.Telegram(
-                "token", "test_bot", 30, 2000, 8000, 15_728_640L, 1_048_576L, 30_000_000L);
+                "token", "test_bot", "", 30, 2000, 8000, 15_728_640L, 1_048_576L, 30_000_000L);
         UzelokProperties.Limits limits = new UzelokProperties.Limits(20, 5, 72);
         MutableClock clock = new MutableClock(Instant.parse("2026-01-15T10:00:00Z"));
 
@@ -114,7 +114,7 @@ class AlbumIngestTest {
         InMemoryAccessRepository access = new InMemoryAccessRepository()
                 .add(CHAT_ID, new ChatAccess(TENANT_ID, APP_USER_ID, FROM_ID, true));
         UzelokProperties.Telegram telegramProps = new UzelokProperties.Telegram(
-                "token", "test_bot", 30, 2000, 8000, 15_728_640L, 1_048_576L, 30_000_000L);
+                "token", "test_bot", "", 30, 2000, 8000, 15_728_640L, 1_048_576L, 30_000_000L);
         UzelokProperties.Limits limits = new UzelokProperties.Limits(20, 1, 72);
         MutableClock clock = new MutableClock(Instant.parse("2026-01-15T10:00:00Z"));
 

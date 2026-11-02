@@ -1,5 +1,9 @@
 package uzelok.config;
 
+import java.net.Authenticator;
+import java.net.InetSocketAddress;
+import java.net.PasswordAuthentication;
+import java.net.ProxySelector;
 import java.time.Clock;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -27,7 +31,28 @@ public class LlmConfig {
 
     @Bean
     public HttpLlmClient httpLlmClient(JsonMapper jsonMapper, UzelokProperties properties) {
-        return new HttpLlmClient(jsonMapper, properties.llm().timeoutSeconds());
+        ProxySupport.ProxyConfig proxy = ProxySupport.parse(properties.llm().proxyUrl())
+                .orElse(null);
+        int timeoutSeconds = properties.llm().timeoutSeconds();
+        if (proxy == null) {
+            return new HttpLlmClient(ProxySelector.getDefault(), jsonMapper, timeoutSeconds);
+        }
+        ProxySelector selector = ProxySelector.of((InetSocketAddress) proxy.proxy().address());
+        Authenticator authenticator = proxy.hasCredentials()
+                ? proxyAuthenticator(proxy.user(), proxy.password()) : null;
+        return new HttpLlmClient(selector, authenticator, jsonMapper, timeoutSeconds);
+    }
+
+    private static Authenticator proxyAuthenticator(String user, char[] password) {
+        return new Authenticator() {
+            @Override
+            protected PasswordAuthentication getPasswordAuthentication() {
+                if (getRequestorType() != RequestorType.PROXY) {
+                    return null;
+                }
+                return new PasswordAuthentication(user, password);
+            }
+        };
     }
 
     @Bean

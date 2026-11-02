@@ -2,6 +2,8 @@ package uzelok.llm;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.Authenticator;
+import java.net.ProxySelector;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -35,14 +37,32 @@ public final class HttpLlmClient {
     private final Duration requestTimeout;
 
     public HttpLlmClient(JsonMapper mapper, int timeoutSeconds) {
-        this(HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build(), mapper,
-                timeoutSeconds);
+        this(ProxySelector.getDefault(), null, mapper, timeoutSeconds);
+    }
+
+    public HttpLlmClient(ProxySelector proxySelector, JsonMapper mapper, int timeoutSeconds) {
+        this(proxySelector, null, mapper, timeoutSeconds);
+    }
+
+    public HttpLlmClient(ProxySelector proxySelector, Authenticator authenticator, JsonMapper mapper,
+                         int timeoutSeconds) {
+        this(httpClient(proxySelector, authenticator), mapper, timeoutSeconds);
     }
 
     public HttpLlmClient(HttpClient client, JsonMapper mapper, int timeoutSeconds) {
         this.client = client;
         this.mapper = mapper;
         this.requestTimeout = Duration.ofSeconds(timeoutSeconds);
+    }
+
+    private static HttpClient httpClient(ProxySelector proxySelector, Authenticator authenticator) {
+        HttpClient.Builder builder = HttpClient.newBuilder()
+                .proxy(proxySelector == null ? ProxySelector.of(null) : proxySelector)
+                .connectTimeout(Duration.ofSeconds(10));
+        if (authenticator != null) {
+            builder.authenticator(authenticator);
+        }
+        return builder.build();
     }
 
     public LlmHttpResponse complete(String baseUrl, String apiKey, String model, String systemPrompt,

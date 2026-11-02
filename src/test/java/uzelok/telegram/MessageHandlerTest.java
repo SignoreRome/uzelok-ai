@@ -68,7 +68,7 @@ class MessageHandlerTest {
         access = new InMemoryAccessRepository()
                 .add(CHAT_ID, new ChatAccess(TENANT_ID, APP_USER_ID, FROM_ID, true));
         telegramProps = new UzelokProperties.Telegram(
-                "token", "test_bot", 30, 2000, 8000, 15_728_640L, 1_048_576L, 30_000_000L);
+                "token", "test_bot", "", 30, 2000, 8000, 15_728_640L, 1_048_576L, 30_000_000L);
         limits = new UzelokProperties.Limits(20, 5, 72);
         clock = Clock.fixed(Instant.parse("2026-01-15T10:00:00Z"), ZoneOffset.UTC);
         handler = handlerWith(new FixedKnowledgeBaseRepository(knowledgeBase()));

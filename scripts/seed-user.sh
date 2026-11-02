@@ -4,13 +4,16 @@
 # от ручных правок в БД.
 #
 # Использование:
-#   scripts/seed-owner.sh --chat-id 123456789 --user-id 987654321 --vault /path/to/vault
-#   scripts/seed-owner.sh ... | kubectl exec -i -n infra-shared postgres-0 -- \
+#   scripts/seed-user.sh --chat-id 123456789 --user-id 987654321 --slug roman --name "Роман" \
+#       --vault /path/to/vault
+#   scripts/seed-user.sh --chat-id 123456789 --user-id 987654321 --slug guest --name "Гость"
+#       (без --vault: доступ есть, базы знаний ещё нет — бот ответит «База знаний не подключена»)
+#   scripts/seed-user.sh ... | kubectl exec -i -n infra-shared postgres-0 -- \
 #       env PGPASSWORD=... psql -U ... -d uzelok
 #
 # --chat-id        chat_id личного чата с ботом (число)
 # --user-id        telegram user id владельца (число)
-# --vault          абсолютный путь к базе знаний на диске сервера
+# --vault          абсолютный путь к базе знаний на диске сервера (необязателен)
 # --slug           слаг тенанта (по умолчанию owner)
 # --name           отображаемое имя (по умолчанию Owner)
 # --kind           EXTERNAL_OBSIDIAN (по умолчанию) или INTERNAL_DIR
@@ -32,10 +35,18 @@ done
 
 [[ "$chat_id" =~ ^[0-9]+$ ]] || { echo "нужен числовой --chat-id" >&2; exit 2; }
 [[ "$user_id" =~ ^[0-9]+$ ]] || { echo "нужен числовой --user-id" >&2; exit 2; }
-[[ -n "$vault" && "$vault" = /* ]] || { echo "нужен абсолютный --vault" >&2; exit 2; }
+if [[ -n "$vault" && "$vault" != /* ]]; then echo "нужен абсолютный --vault" >&2; exit 2; fi
 [[ "$kind" == "EXTERNAL_OBSIDIAN" || "$kind" == "INTERNAL_DIR" ]] || { echo "неверный --kind" >&2; exit 2; }
 
 quoted_vault=${vault//\'/\'\'}
+vault_block=""
+if [[ -n "$vault" ]]; then
+    vault_block="
+INSERT INTO knowledge_base (tenant_id, kind, root_path)
+SELECT id, '$kind', '$quoted_vault' FROM tenant WHERE slug = '$slug'
+ON CONFLICT (tenant_id) DO UPDATE SET root_path = EXCLUDED.root_path, kind = EXCLUDED.kind;
+"
+fi
 
 cat <<SQL
 BEGIN;
@@ -53,9 +64,6 @@ FROM tenant t JOIN app_user au ON au.tenant_id = t.id
 WHERE t.slug = '$slug' AND au.telegram_user_id = $user_id
 ON CONFLICT (chat_id) DO UPDATE SET allowed = true, user_id = EXCLUDED.user_id;
 
-INSERT INTO knowledge_base (tenant_id, kind, root_path)
-SELECT id, '$kind', '$quoted_vault' FROM tenant WHERE slug = '$slug'
-ON CONFLICT (tenant_id) DO UPDATE SET root_path = EXCLUDED.root_path, kind = EXCLUDED.kind;
-
+${vault_block}
 COMMIT;
 SQL

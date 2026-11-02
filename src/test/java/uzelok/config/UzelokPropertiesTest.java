@@ -36,6 +36,7 @@ class UzelokPropertiesTest {
 
             assertThat(properties.telegram().botToken()).isEqualTo("test-token");
             assertThat(properties.telegram().botUsername()).isEqualTo("test-bot");
+            assertThat(properties.telegram().proxyUrl()).isEmpty();
             assertThat(properties.telegram().pollTimeoutSeconds()).isEqualTo(30);
             assertThat(properties.telegram().mediaGroupWindowMs()).isEqualTo(2000);
             assertThat(properties.telegram().maxTextChars()).isEqualTo(8000);
@@ -74,6 +75,7 @@ class UzelokPropertiesTest {
             assertThat(properties.llm().dailyBudgetUsd())
                     .isEqualByComparingTo(new BigDecimal("2.00"));
             assertThat(properties.llm().timeoutSeconds()).isEqualTo(120);
+            assertThat(properties.llm().proxyUrl()).isEmpty();
 
             assertThat(properties.knowledge().lintCommand()).isEmpty();
             assertThat(properties.knowledge().lintTimeoutSeconds()).isEqualTo(60);

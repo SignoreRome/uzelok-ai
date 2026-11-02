@@ -140,7 +140,8 @@ class LayerRulesTest {
     @Test
     void onlyLlmAndTelegramUseHttpClients() {
         noClasses()
-                .that().resideOutsideOfPackages("uzelok.llm..", "uzelok.telegram..")
+                .that().resideOutsideOfPackages("uzelok.llm..", "uzelok.telegram..",
+                        "uzelok.config..")
                 .and().doNotHaveFullyQualifiedName("uzelok.UzelokApplication")
                 .should().dependOnClassesThat()
                 .resideInAnyPackage(

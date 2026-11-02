@@ -76,7 +76,8 @@ class OpenAiCompatibleLlmGatewayTest {
                                 new BigDecimal("0.10"), new BigDecimal("0.20"))),
                 "v1",
                 new BigDecimal("2.00"),
-                10);
+                10,
+                "");
         gateway = new OpenAiCompatibleLlmGateway(
                 new HttpLlmClient(mapper, 5),
                 new LlmRouter(properties),
@@ -284,7 +285,8 @@ class OpenAiCompatibleLlmGatewayTest {
                 properties.pricing(),
                 properties.promptVersion(),
                 properties.dailyBudgetUsd(),
-                properties.timeoutSeconds());
+                properties.timeoutSeconds(),
+                properties.proxyUrl());
         server = replacement;
         return replacement;
     }
