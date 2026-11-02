@@ -27,7 +27,7 @@ import uzelok.domain.port.SourceItemRepository;
 
 public final class RenderStep {
 
-    private static final int EXCERPT_LENGTH = 1500;
+    private static final int EXCERPT_LENGTH = 100_000;
 
     private final ArtifactRepository artifacts;
     private final KnowledgeBaseRepository bases;
@@ -48,18 +48,21 @@ public final class RenderStep {
     }
 
     public PreviewView run(ProcessingJob job) {
+        int version = job.draftVersion() + 1;
         JobArtifact draftArtifact = artifacts.findLatest(job.id(), ArtifactKind.DRAFT_JSON)
                 .orElseThrow(() -> new IllegalStateException(
                         "нет артефакта DRAFT_JSON для задачи " + job.id()));
         NoteDraft draft = json.read(draftArtifact.inlineText(), NoteDraft.class);
 
         List<String> warnings = artifacts.findLatest(job.id(), ArtifactKind.LINT_REPORT)
+                .filter(artifact -> artifact.version() == version)
                 .map(artifact -> splitWarnings(artifact.inlineText()))
                 .orElse(List.of());
 
         PreparedNote prepared = artifacts.findLatest(job.id(), ArtifactKind.RENDERED_MD)
+                .filter(artifact -> artifact.version() == version)
                 .map(artifact -> fromArtifact(artifact, warnings))
-                .orElseGet(() -> render(job, draft));
+                .orElseGet(() -> render(job, draft, version));
 
         SourceItem item = source.findById(job.sourceItemId())
                 .orElseThrow(() -> new IllegalStateException(
@@ -72,12 +75,13 @@ public final class RenderStep {
                 draft.topic(),
                 draft.summary(),
                 excerpt(prepared.markdown()),
+                prepared.markdown(),
                 prepared.warnings());
         notifier.preview(view);
         return view;
     }
 
-    private PreparedNote render(ProcessingJob job, NoteDraft draft) {
+    private PreparedNote render(ProcessingJob job, NoteDraft draft, int version) {
         KnowledgeBase base = bases.findByTenantId(job.tenantId())
                 .orElseThrow(() -> new IllegalStateException(
                         "база знаний не найдена для задачи " + job.id()));
@@ -91,7 +95,7 @@ public final class RenderStep {
                 job.id(),
                 job.tenantId(),
                 ArtifactKind.RENDERED_MD,
-                1,
+                version,
                 prepared.contentHash(),
                 prepared.relPath(),
                 prepared.markdown(),
@@ -105,7 +109,7 @@ public final class RenderStep {
                     job.id(),
                     job.tenantId(),
                     ArtifactKind.LINT_REPORT,
-                    1,
+                    version,
                     sha256(report),
                     null,
                     report,

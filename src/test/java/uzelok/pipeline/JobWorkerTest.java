@@ -13,6 +13,7 @@ import uzelok.config.JacksonJsonCodec;
 import uzelok.domain.exception.LlmCallFailed;
 import uzelok.domain.exception.QuotaExceeded;
 import uzelok.domain.model.ArtifactKind;
+import uzelok.domain.model.JobArtifact;
 import uzelok.domain.model.JobStatus;
 import uzelok.domain.model.KnowledgeBase;
 import uzelok.domain.model.KnowledgeBaseKind;
@@ -28,7 +29,9 @@ import uzelok.support.FixedKnowledgeBaseRepository;
 import uzelok.support.InMemoryArtifactRepository;
 import uzelok.support.InMemoryAttachmentRepository;
 import uzelok.support.InMemoryJobRepository;
+import uzelok.support.InMemoryNoteRepository;
 import uzelok.support.InMemorySourceItemRepository;
+import uzelok.support.RecordingAuditRepository;
 import uzelok.support.RecordingJobNotifier;
 import uzelok.support.ScriptedLlmGateway;
 
@@ -47,6 +50,8 @@ class JobWorkerTest {
     private ScriptedLlmGateway llm;
     private RecordingJobNotifier notifier;
     private FakeKnowledgeStore knowledge;
+    private InMemoryNoteRepository notes;
+    private JacksonJsonCodec codec;
     private JobWorker worker;
     private ProcessingJob job;
 
@@ -58,6 +63,8 @@ class JobWorkerTest {
         llm = new ScriptedLlmGateway();
         notifier = new RecordingJobNotifier();
         knowledge = new FakeKnowledgeStore();
+        notes = new InMemoryNoteRepository();
+        codec = new JacksonJsonCodec(JsonMapper.builder().build());
         worker = worker(3);
 
         SourceItem item = source.ensure(new SourceItem(
@@ -65,7 +72,7 @@ class JobWorkerTest {
                 null, "материал", NOW)).item();
         job = jobs.createIfAbsent(new ProcessingJob(
                 UUID.randomUUID(), tenantId, item.id(), base.id(), JobStatus.RECEIVED,
-                null, 0, NOW, null, 99L, null, null, null, NOW, NOW)).job();
+                null, 0, NOW, null, 99L, null, null, null, NOW, NOW, 0, false)).job();
     }
 
     @Test
@@ -119,6 +126,34 @@ class JobWorkerTest {
     }
 
     @Test
+    void writingJobIsWrittenAndFinishesAsDone() {
+        ProcessingJob writing = writingJob();
+
+        worker.runOnce(NOW);
+
+        ProcessingJob done = jobs.findById(writing.id()).orElseThrow();
+        assertThat(done.status()).isEqualTo(JobStatus.DONE);
+        assertThat(notes.versions()).hasSize(1);
+        assertThat(notifier.saved()).containsExactly("40_Knowledge/Algorithms/Graphs/Test.md");
+    }
+
+    @Test
+    void writeFailureIsRetriedThreeTimesAndThenFails() {
+        knowledge.failWrite = true;
+        ProcessingJob writing = writingJob();
+
+        worker.runOnce(NOW);
+        assertThat(jobs.findById(writing.id()).orElseThrow().status()).isEqualTo(JobStatus.WRITING);
+        worker.runOnce(NOW.plusSeconds(31));
+        worker.runOnce(NOW.plusSeconds(92));
+
+        ProcessingJob failed = jobs.findById(writing.id()).orElseThrow();
+        assertThat(failed.status()).isEqualTo(JobStatus.FAILED);
+        assertThat(failed.failedStage()).isEqualTo("WRITING");
+        assertThat(notifier.failures()).hasSize(1);
+    }
+
+    @Test
     void quotaExceededFailsImmediatelyWithoutRetry() {
         llm.failExtract(new QuotaExceeded("бюджет"));
 
@@ -132,20 +167,35 @@ class JobWorkerTest {
     }
 
     private JobWorker worker(int maxAttempts) {
-        JsonMapper mapper = JsonMapper.builder().build();
-        JacksonJsonCodec codec = new JacksonJsonCodec(mapper);
         JobStateMachine machine = new JobStateMachine();
         JobService state = new JobService(jobs, machine);
+        FixedKnowledgeBaseRepository bases = new FixedKnowledgeBaseRepository(base);
         ExtractStep extract = new ExtractStep(source, new InMemoryAttachmentRepository(),
                 artifacts, llm, codec);
-        DraftStep draft = new DraftStep(artifacts, new FixedKnowledgeBaseRepository(base),
-                knowledge, llm, codec);
-        RenderStep render = new RenderStep(artifacts, new FixedKnowledgeBaseRepository(base),
-                knowledge, source, notifier, codec);
-        return new JobWorker(jobs, state, extract, draft, render, notifier, 10, maxAttempts);
+        DraftStep draft = new DraftStep(artifacts, bases, knowledge, llm, codec);
+        RenderStep render = new RenderStep(artifacts, bases, knowledge, source, notifier, codec);
+        WriteStep write = new WriteStep(artifacts, bases, knowledge, notes,
+                new RecordingAuditRepository(), codec);
+        return new JobWorker(jobs, state, extract, draft, render, write, notifier, 10, maxAttempts);
+    }
+
+    private ProcessingJob writingJob() {
+        SourceItem item = source.ensure(new SourceItem(
+                UUID.randomUUID(), tenantId, base.id(), 42L, 101L, SourceKind.TEXT,
+                null, "материал", NOW)).item();
+        ProcessingJob writing = jobs.createIfAbsent(new ProcessingJob(
+                UUID.randomUUID(), tenantId, item.id(), base.id(), JobStatus.WRITING,
+                null, 0, NOW, null, 99L, null, null, null, NOW, NOW, 0, false)).job();
+        NoteDraft draft = new NoteDraft("Тестовая заметка", uzelok.domain.model.NoteType.concept,
+                "Graphs", "Короткое описание", "## Тело\n\nТекст заметки.", 0.9);
+        artifacts.save(new JobArtifact(UUID.randomUUID(), writing.id(), tenantId,
+                ArtifactKind.DRAFT_JSON, 1, "sha", null, codec.write(draft), null, null, NOW));
+        return writing;
     }
 
     private static final class FakeKnowledgeStore implements KnowledgeStore {
+
+        private boolean failWrite;
 
         @Override
         public PreparedNote prepare(KnowledgeBase base, String jobRef, NoteDraft draft,
@@ -158,6 +208,9 @@ class JobWorkerTest {
 
         @Override
         public WrittenNote write(KnowledgeBase base, PreparedNote note) {
+            if (failWrite) {
+                throw new IllegalStateException("запись не удалась");
+            }
             return new WrittenNote(note.noteId(), note.relPath(), note.contentHash(), true);
         }
 

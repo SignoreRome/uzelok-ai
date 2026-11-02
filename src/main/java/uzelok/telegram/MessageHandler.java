@@ -203,7 +203,9 @@ public final class MessageHandler {
                 null,
                 null,
                 jobNow,
-                jobNow);
+                jobNow,
+                0,
+                false);
         JobCreation creation = jobs.createIfAbsent(jobCandidate);
 
         if (creation.created()) {

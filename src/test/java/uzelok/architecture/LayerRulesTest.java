@@ -70,6 +70,19 @@ class LayerRulesTest {
     }
 
     @Test
+    void telegramDoesNotDependOnConfig() {
+        noClasses()
+                .that().resideInAPackage("uzelok.telegram..")
+                .and().doNotHaveFullyQualifiedName("uzelok.telegram.MessageHandler")
+                .and().doNotHaveFullyQualifiedName("uzelok.telegram.AttachmentReceiver")
+                .and().doNotHaveFullyQualifiedName("uzelok.telegram.TelegramPoller")
+                .should().dependOnClassesThat()
+                .resideInAPackage("uzelok.config..")
+                .allowEmptyShould(true)
+                .check(MAIN_CLASSES);
+    }
+
+    @Test
     void onlyConfigUsesConfigurationPropertiesApi() {
         noClasses()
                 .that().resideOutsideOfPackage("uzelok.config..")

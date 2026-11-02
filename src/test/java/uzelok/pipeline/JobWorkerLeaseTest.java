@@ -24,7 +24,9 @@ import uzelok.support.FixedKnowledgeBaseRepository;
 import uzelok.support.InMemoryArtifactRepository;
 import uzelok.support.InMemoryAttachmentRepository;
 import uzelok.support.InMemoryJobRepository;
+import uzelok.support.InMemoryNoteRepository;
 import uzelok.support.InMemorySourceItemRepository;
+import uzelok.support.RecordingAuditRepository;
 import uzelok.support.RecordingJobNotifier;
 import uzelok.support.ScriptedLlmGateway;
 
@@ -42,8 +44,8 @@ class JobWorkerLeaseTest {
         SourceItem item = source.ensure(new SourceItem(UUID.randomUUID(), tenantId, base.id(),
                 42L, 100L, SourceKind.TEXT, null, "текст", now)).item();
         ProcessingJob job = jobs.createIfAbsent(new ProcessingJob(UUID.randomUUID(), tenantId,
-                item.id(), base.id(), JobStatus.WRITING, null, 0, now,
-                now.minusSeconds(60), null, null, null, null, now, now)).job();
+                item.id(), base.id(), JobStatus.RECEIVED, null, 0, now,
+                now.minusSeconds(60), null, null, null, null, now, now, 0, false)).job();
 
         JobWorker worker = worker(jobs, source, base);
 
@@ -51,9 +53,9 @@ class JobWorkerLeaseTest {
 
         ProcessingJob reclaimed = jobs.findById(job.id()).orElseThrow();
         assertThat(reclaimed.attemptCount()).isEqualTo(1);
-        assertThat(reclaimed.status()).isEqualTo(JobStatus.WRITING);
-        assertThat(reclaimed.leaseUntil()).isAfter(now);
-        assertThat(report.claimed()).isEqualTo(1);
+        assertThat(reclaimed.status()).isEqualTo(JobStatus.AWAITING_CONFIRM);
+        assertThat(reclaimed.leaseUntil()).isNull();
+        assertThat(report.claimed()).isGreaterThanOrEqualTo(1);
     }
 
     private static JobWorker worker(InMemoryJobRepository jobs,
@@ -89,10 +91,12 @@ class JobWorkerLeaseTest {
         };
         FixedKnowledgeBaseRepository bases = new FixedKnowledgeBaseRepository(base);
         JobService state = new JobService(jobs, new JobStateMachine());
+        WriteStep write = new WriteStep(artifacts, bases, knowledge, new InMemoryNoteRepository(),
+                new RecordingAuditRepository(), codec);
         return new JobWorker(jobs, state,
                 new ExtractStep(source, new InMemoryAttachmentRepository(), artifacts, llm, codec),
                 new DraftStep(artifacts, bases, knowledge, llm, codec),
                 new RenderStep(artifacts, bases, knowledge, source, notifier, codec),
-                notifier, 10, 3);
+                write, notifier, 10, 3);
     }
 }

@@ -7,11 +7,14 @@ import org.springframework.context.annotation.Configuration;
 import org.telegram.telegrambots.client.okhttp.OkHttpTelegramClient;
 import org.telegram.telegrambots.meta.generics.TelegramClient;
 import uzelok.domain.port.AccessRepository;
+import uzelok.domain.port.ActionHandler;
 import uzelok.domain.port.AttachmentRepository;
 import uzelok.domain.port.AuditRepository;
 import uzelok.domain.port.JobRepository;
 import uzelok.domain.port.KnowledgeBaseRepository;
+import uzelok.domain.port.PendingActionRepository;
 import uzelok.domain.port.SourceItemRepository;
+import uzelok.domain.port.StatsProvider;
 import uzelok.domain.port.TelegramGateway;
 import uzelok.telegram.AttachmentReceiver;
 import uzelok.telegram.CallbackHandler;
@@ -53,13 +56,22 @@ public class TelegramConfig {
 
     @Bean
     public CommandHandler commandHandler(TelegramGateway telegram, Messages messages,
-                                         UzelokProperties properties) {
-        return new CommandHandler(telegram, messages, properties.telegram());
+                                         UzelokProperties properties, AccessRepository access,
+                                         JobRepository jobs, StatsProvider stats, Clock clock) {
+        java.util.Map<String, CommandHandler.LlmStep> steps = new java.util.LinkedHashMap<>();
+        properties.llm().steps().forEach((name, step) -> steps.put(name,
+                new CommandHandler.LlmStep(step.provider(), step.model(),
+                        step.fallbackModel())));
+        return new CommandHandler(telegram, messages, properties.telegram().botUsername(),
+                steps, access, jobs, stats, clock);
     }
 
     @Bean
-    public CallbackHandler callbackHandler(AuditRepository audit, AccessRepository access) {
-        return new CallbackHandler(audit, access);
+    public CallbackHandler callbackHandler(AccessRepository access,
+                                           PendingActionRepository actions,
+                                           ActionHandler handler, TelegramGateway telegram,
+                                           AuditRepository audit, Clock clock) {
+        return new CallbackHandler(access, actions, handler, telegram, audit, clock);
     }
 
     @Bean

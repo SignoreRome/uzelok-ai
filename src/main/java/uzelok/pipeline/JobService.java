@@ -34,10 +34,12 @@ public final class JobService {
                 job.nextRunAt(),
                 null,
                 job.statusMessageId(),
-                job.errorCode(),
-                job.errorMessage(),
+                null,
+                null,
                 job.confirmedAt(),
                 job.createdAt(),
-                job.updatedAt());
+                job.updatedAt(),
+                job.draftVersion(),
+                job.forceInbox());
     }
 }

@@ -289,7 +289,9 @@ class JdbcPersistenceIT {
                 null,
                 null,
                 now,
-                now);
+                now,
+                0,
+                false);
     }
 
     private static String environment(String name, String defaultValue) {

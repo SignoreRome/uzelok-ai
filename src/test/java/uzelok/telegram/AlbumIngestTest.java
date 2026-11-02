@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -13,10 +14,13 @@ import uzelok.domain.model.ChatAccess;
 import uzelok.domain.model.KnowledgeBase;
 import uzelok.domain.model.KnowledgeBaseKind;
 import uzelok.domain.model.ProcessingJob;
+import uzelok.pipeline.StatsService;
 import uzelok.support.FixedKnowledgeBaseRepository;
 import uzelok.support.InMemoryAccessRepository;
 import uzelok.support.InMemoryAttachmentRepository;
 import uzelok.support.InMemoryJobRepository;
+import uzelok.support.InMemoryLlmCallRepository;
+import uzelok.support.InMemoryNoteRepository;
 import uzelok.support.InMemorySourceItemRepository;
 import uzelok.support.InMemoryTelegramGateway;
 import uzelok.support.MutableClock;
@@ -62,7 +66,9 @@ class AlbumIngestTest {
                 "40_Knowledge/_meta/taxonomy.yaml",
                 "40_Knowledge/_Inbox"));
         Messages messages = new Messages();
-        CommandHandler commands = new CommandHandler(telegram, messages, telegramProps);
+        CommandHandler commands = new CommandHandler(telegram, messages, "test_bot", Map.of(),
+                access, jobs, new StatsService(new InMemoryNoteRepository(), jobs,
+                        new InMemoryLlmCallRepository()), clock);
         AttachmentReceiver receiver = new AttachmentReceiver(
                 telegramProps,
                 new UzelokProperties.Storage(artifacts.toString()),
@@ -124,7 +130,9 @@ class AlbumIngestTest {
                 "40_Knowledge/_meta/taxonomy.yaml",
                 "40_Knowledge/_Inbox"));
         Messages messages = new Messages();
-        CommandHandler commands = new CommandHandler(telegram, messages, telegramProps);
+        CommandHandler commands = new CommandHandler(telegram, messages, "test_bot", Map.of(),
+                access, jobs, new StatsService(new InMemoryNoteRepository(), jobs,
+                        new InMemoryLlmCallRepository()), clock);
         AttachmentReceiver receiver = new AttachmentReceiver(
                 telegramProps,
                 new UzelokProperties.Storage(artifacts.toString()),
@@ -151,4 +159,5 @@ class AlbumIngestTest {
         assertThat(source.size()).isEqualTo(1);
         assertThat(audit.actions()).contains("quota_exceeded");
     }
+
 }

@@ -1,5 +1,6 @@
 package uzelok.telegram;
 
+import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -10,8 +11,10 @@ import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import org.telegram.telegrambots.meta.api.methods.send.SendDocument;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
 import org.telegram.telegrambots.meta.api.methods.updatingmessages.EditMessageText;
+import org.telegram.telegrambots.meta.api.objects.InputFile;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardButton;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardRow;
@@ -63,6 +66,20 @@ public final class TelegramBotGateway implements TelegramGateway {
             client.execute(edit);
         } catch (org.telegram.telegrambots.meta.exceptions.TelegramApiException exception) {
             throw new TelegramDeliveryException("не удалось изменить сообщение в Telegram", exception);
+        }
+    }
+
+    @Override
+    public long sendDocument(long chatId, String fileName, byte[] content, String caption) {
+        SendDocument document = SendDocument.builder()
+                .chatId(chatId)
+                .document(new InputFile(new ByteArrayInputStream(content), fileName))
+                .caption(caption)
+                .build();
+        try {
+            return client.execute(document).getMessageId();
+        } catch (org.telegram.telegrambots.meta.exceptions.TelegramApiException exception) {
+            throw new TelegramDeliveryException("не удалось отправить документ в Telegram", exception);
         }
     }
 

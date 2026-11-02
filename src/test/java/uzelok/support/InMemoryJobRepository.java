@@ -28,6 +28,22 @@ public final class InMemoryJobRepository implements JobRepository {
     }
 
     @Override
+    public synchronized Optional<ProcessingJob> find(UUID jobId) {
+        return Optional.ofNullable(jobs.get(jobId));
+    }
+
+    @Override
+    public synchronized Optional<ProcessingJob> findActiveByChat(long chatId) {
+        return jobs.values().stream()
+                .filter(job -> job.status() == JobStatus.AWAITING_CONFIRM
+                        || job.status() == JobStatus.FAILED)
+                .filter(job -> source.findById(job.sourceItemId())
+                        .map(item -> item.chatId() == chatId)
+                        .orElse(false))
+                .max(java.util.Comparator.comparing(ProcessingJob::updatedAt));
+    }
+
+    @Override
     public synchronized JobCreation createIfAbsent(ProcessingJob candidate) {
         Optional<ProcessingJob> existing = findBySourceItemId(candidate.sourceItemId());
         if (existing.isPresent()) {
@@ -48,9 +64,65 @@ public final class InMemoryJobRepository implements JobRepository {
                 candidate.errorMessage(),
                 candidate.confirmedAt(),
                 candidate.createdAt() == null ? Instant.now() : candidate.createdAt(),
-                candidate.updatedAt() == null ? Instant.now() : candidate.updatedAt());
+                candidate.updatedAt() == null ? Instant.now() : candidate.updatedAt(),
+                candidate.draftVersion(),
+                candidate.forceInbox());
         jobs.put(stored.id(), stored);
         return new JobCreation(stored, true);
+    }
+
+    @Override
+    public synchronized boolean startWriting(UUID jobId, boolean forceInbox) {
+        ProcessingJob existing = jobs.get(jobId);
+        if (existing == null || existing.status() != JobStatus.AWAITING_CONFIRM) {
+            return false;
+        }
+        jobs.put(jobId, new ProcessingJob(
+                existing.id(),
+                existing.tenantId(),
+                existing.sourceItemId(),
+                existing.knowledgeBaseId(),
+                JobStatus.WRITING,
+                existing.failedStage(),
+                existing.attemptCount(),
+                existing.nextRunAt(),
+                null,
+                existing.statusMessageId(),
+                null,
+                null,
+                existing.confirmedAt(),
+                existing.createdAt(),
+                Instant.now(),
+                existing.draftVersion(),
+                forceInbox));
+        return true;
+    }
+
+    @Override
+    public synchronized boolean startRegeneration(UUID jobId) {
+        ProcessingJob existing = jobs.get(jobId);
+        if (existing == null || existing.status() != JobStatus.AWAITING_CONFIRM) {
+            return false;
+        }
+        jobs.put(jobId, new ProcessingJob(
+                existing.id(),
+                existing.tenantId(),
+                existing.sourceItemId(),
+                existing.knowledgeBaseId(),
+                JobStatus.DRAFTING,
+                existing.failedStage(),
+                existing.attemptCount(),
+                existing.nextRunAt(),
+                null,
+                existing.statusMessageId(),
+                existing.errorCode(),
+                existing.errorMessage(),
+                existing.confirmedAt(),
+                existing.createdAt(),
+                Instant.now(),
+                existing.draftVersion() + 1,
+                existing.forceInbox()));
+        return true;
     }
 
     @Override
@@ -84,7 +156,9 @@ public final class InMemoryJobRepository implements JobRepository {
                 existing.errorMessage(),
                 existing.confirmedAt(),
                 existing.createdAt(),
-                nextRunAt));
+                nextRunAt,
+                existing.draftVersion(),
+                existing.forceInbox()));
         return true;
     }
 
@@ -94,6 +168,18 @@ public final class InMemoryJobRepository implements JobRepository {
         for (ProcessingJob job : jobs.values()) {
             SourceItem item = source.findById(job.sourceItemId()).orElse(null);
             if (item != null && item.chatId() == chatId && !item.createdAt().isBefore(since)) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    @Override
+    public synchronized int countForTenantSince(UUID tenantId, Instant since) {
+        int count = 0;
+        for (ProcessingJob job : jobs.values()) {
+            if (tenantId.equals(job.tenantId())
+                    && !job.createdAt().isBefore(since)) {
                 count++;
             }
         }
@@ -138,8 +224,7 @@ public final class InMemoryJobRepository implements JobRepository {
             return false;
         }
         jobs.put(jobId, copy(existing, to, existing.attemptCount(), existing.nextRunAt(), null,
-                existing.failedStage(), existing.errorCode(), existing.errorMessage(),
-                Instant.now()));
+                existing.failedStage(), null, null, Instant.now()));
         return true;
     }
 
@@ -164,6 +249,18 @@ public final class InMemoryJobRepository implements JobRepository {
         }
         jobs.put(jobId, copy(existing, JobStatus.FAILED, existing.attemptCount(),
                 existing.nextRunAt(), null, stage, errorCode, errorMessage, Instant.now()));
+        return true;
+    }
+
+    @Override
+    public synchronized boolean retryFailed(UUID jobId, JobStatus target, int maxAttempts) {
+        ProcessingJob existing = jobs.get(jobId);
+        if (existing == null || existing.status() != JobStatus.FAILED
+                || existing.attemptCount() >= maxAttempts) {
+            return false;
+        }
+        jobs.put(jobId, copy(existing, target, existing.attemptCount() + 1, Instant.now(),
+                null, null, null, null, Instant.now()));
         return true;
     }
 
@@ -202,7 +299,9 @@ public final class InMemoryJobRepository implements JobRepository {
                 errorMessage,
                 job.confirmedAt(),
                 job.createdAt(),
-                updatedAt);
+                updatedAt,
+                job.draftVersion(),
+                job.forceInbox());
     }
 
     private static ProcessingJob withStatusMessage(ProcessingJob job, long messageId) {
@@ -221,6 +320,8 @@ public final class InMemoryJobRepository implements JobRepository {
                 job.errorMessage(),
                 job.confirmedAt(),
                 job.createdAt(),
-                job.updatedAt());
+                job.updatedAt(),
+                job.draftVersion(),
+                job.forceInbox());
     }
 }

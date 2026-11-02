@@ -12,11 +12,17 @@ public final class RecordingJobNotifier implements JobNotifier {
     }
 
     private final List<PreviewView> previews = new ArrayList<>();
+    private final List<String> saved = new ArrayList<>();
     private final List<Failure> failures = new ArrayList<>();
 
     @Override
     public synchronized void preview(PreviewView view) {
         previews.add(view);
+    }
+
+    @Override
+    public synchronized void saved(ProcessingJob job, String relPath) {
+        saved.add(relPath);
     }
 
     @Override
@@ -26,6 +32,10 @@ public final class RecordingJobNotifier implements JobNotifier {
 
     public synchronized List<PreviewView> previews() {
         return List.copyOf(previews);
+    }
+
+    public synchronized List<String> saved() {
+        return List.copyOf(saved);
     }
 
     public synchronized List<Failure> failures() {

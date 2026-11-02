@@ -21,4 +21,9 @@ public final class UnavailableTelegramGateway implements TelegramGateway {
     public byte[] download(String fileId, long maxBytes) {
         throw new TelegramDeliveryException(MESSAGE);
     }
+
+    @Override
+    public long sendDocument(long chatId, String fileName, byte[] content, String caption) {
+        throw new TelegramDeliveryException(MESSAGE);
+    }
 }

@@ -57,6 +57,8 @@ class StatusMessageTest {
                 null,
                 null,
                 now,
-                now);
+                now,
+                0,
+                false);
     }
 }
