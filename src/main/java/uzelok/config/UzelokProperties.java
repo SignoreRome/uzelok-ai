@@ -8,6 +8,8 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
 @ConfigurationProperties("uzelok")
 public record UzelokProperties(
         @DefaultValue Telegram telegram,
+        @DefaultValue Storage storage,
+        @DefaultValue Limits limits,
         @DefaultValue Llm llm,
         @DefaultValue Knowledge knowledge,
         @DefaultValue Worker worker,
@@ -18,7 +20,20 @@ public record UzelokProperties(
             String botToken,
             String botUsername,
             @DefaultValue("30") int pollTimeoutSeconds,
-            @DefaultValue("2000") int mediaGroupWindowMs) {
+            @DefaultValue("2000") int mediaGroupWindowMs,
+            @DefaultValue("8000") int maxTextChars,
+            @DefaultValue("15728640") long maxPhotoBytes,
+            @DefaultValue("1048576") long maxDocumentBytes,
+            @DefaultValue("30000000") long maxImagePixels) {
+    }
+
+    public record Storage(@DefaultValue("/var/lib/uzelok/artifacts") String artifactsDir) {
+    }
+
+    public record Limits(
+            @DefaultValue("20") int jobsPerDay,
+            @DefaultValue("5") int jobsPerHour,
+            @DefaultValue("72") int attachmentTtlHours) {
     }
 
     public record Llm(

@@ -10,6 +10,7 @@ import java.nio.file.Path;
 import org.junit.jupiter.api.Test;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
+import org.springframework.stereotype.Repository;
 import uzelok.UzelokApplication;
 
 class LayerRulesTest {
@@ -80,6 +81,7 @@ class LayerRulesTest {
     void componentsAndScheduledClassesLiveInAllowedPackages() {
         classes()
                 .that().areMetaAnnotatedWith(Component.class)
+                .and().areNotAnnotatedWith(Repository.class)
                 .or().areAnnotatedWith(Scheduled.class)
                 .and().doNotHaveFullyQualifiedName("uzelok.UzelokApplication")
                 .should().resideInAnyPackage(
@@ -88,6 +90,27 @@ class LayerRulesTest {
                         "uzelok.llm..",
                         "uzelok.knowledge..",
                         "uzelok.config..")
+                .check(MAIN_CLASSES);
+    }
+
+    @Test
+    void componentsAndScheduledOnlyInConfigAndRepositoryOnlyInPersistence() {
+        classes()
+                .that().areMetaAnnotatedWith(Component.class)
+                .and().areNotAnnotatedWith(Repository.class)
+                .and().doNotHaveFullyQualifiedName("uzelok.UzelokApplication")
+                .should().resideInAPackage("uzelok.config..")
+                .check(MAIN_CLASSES);
+
+        classes()
+                .that().areAnnotatedWith(Scheduled.class)
+                .should().resideInAPackage("uzelok.config..")
+                .allowEmptyShould(true)
+                .check(MAIN_CLASSES);
+
+        classes()
+                .that().areAnnotatedWith(Repository.class)
+                .should().resideInAPackage("uzelok.persistence..")
                 .check(MAIN_CLASSES);
     }
 
