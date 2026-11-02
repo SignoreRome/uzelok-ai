@@ -39,9 +39,10 @@ class AttachmentReceiverTest {
         repository = new InMemoryAttachmentRepository();
         gateway = new InMemoryTelegramGateway();
         props = new UzelokProperties.Telegram(
-                "token", "test_bot", 30, 2000, 8000, 15_728_640L, 1_048_576L, 30_000_000L);
+                "token", "test_bot", "", 30, 2000, 8000, 15_728_640L, 1_048_576L, 30_000_000L);
         receiver = new AttachmentReceiver(
-                props, new UzelokProperties.Storage(artifacts.toString()), repository, gateway,
+                props, new UzelokProperties.Storage(artifacts.toString(),
+                        "/var/lib/uzelok/vaults", "/var/lib/uzelok/exports"), repository, gateway,
                 new Messages());
     }
 
@@ -94,9 +95,10 @@ class AttachmentReceiverTest {
     @Test
     void downloadOverLimitIsRejectedByGateway() {
         UzelokProperties.Telegram small = new UzelokProperties.Telegram(
-                "token", "test_bot", 30, 2000, 8000, 10L, 10L, 30_000_000L);
+                "token", "test_bot", "", 30, 2000, 8000, 10L, 10L, 30_000_000L);
         AttachmentReceiver smallReceiver = new AttachmentReceiver(
-                small, new UzelokProperties.Storage(artifacts.toString()), repository, gateway,
+                small, new UzelokProperties.Storage(artifacts.toString(),
+                        "/var/lib/uzelok/vaults", "/var/lib/uzelok/exports"), repository, gateway,
                 new Messages());
         byte[] image = TestImages.jpeg(10, 10);
         gateway.putFile("big", image);

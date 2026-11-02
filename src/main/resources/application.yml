@@ -11,6 +11,7 @@ uzelok:
   telegram:
     bot-token: ${UZELOK_BOT_TOKEN}
     bot-username: ${UZELOK_BOT_USERNAME}
+    proxy-url: ${UZELOK_TELEGRAM_PROXY:}
     poll-timeout-seconds: 30
     media-group-window-ms: 2000
     max-text-chars: 8000
@@ -19,6 +20,8 @@ uzelok:
     max-image-pixels: 30000000
   storage:
     artifacts-dir: ${UZELOK_ARTIFACTS_DIR:/var/lib/uzelok/artifacts}
+    vaults-dir: ${UZELOK_VAULTS_DIR:/var/lib/uzelok/vaults}
+    exports-dir: ${UZELOK_EXPORTS_DIR:/var/lib/uzelok/exports}
   limits:
     jobs-per-day: 20
     jobs-per-hour: 5
@@ -53,6 +56,7 @@ uzelok:
     prompt-version: v1
     daily-budget-usd: 2.00
     timeout-seconds: 120
+    proxy-url: ${UZELOK_LLM_PROXY:}
   knowledge:
     lint-command: ""
     lint-timeout-seconds: 60
@@ -60,6 +64,8 @@ uzelok:
     tmp-dir: .uzelok-tmp
     confidence-threshold: 0.55
     max-file-name-length: 60
+    export-max-bytes: 50000000
+    export-max-files: 5000
   worker:
     lease-minutes: 10
     max-attempts: 3

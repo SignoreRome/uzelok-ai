@@ -4,6 +4,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import uzelok.domain.port.ArtifactRepository;
 import uzelok.domain.port.AttachmentRepository;
+import uzelok.domain.port.AuditRepository;
 import uzelok.domain.port.JobNotifier;
 import uzelok.domain.port.JobRepository;
 import uzelok.domain.port.JsonCodec;
@@ -12,18 +13,24 @@ import uzelok.domain.port.KnowledgeStore;
 import uzelok.domain.port.LlmCallRepository;
 import uzelok.domain.port.LlmGateway;
 import uzelok.domain.port.NoteRepository;
+import uzelok.domain.port.OnboardingHandler;
+import uzelok.domain.port.OnboardingSessionRepository;
 import uzelok.domain.port.SourceItemRepository;
 import uzelok.domain.port.TelegramGateway;
+import uzelok.domain.port.VaultInspector;
+import uzelok.domain.port.VaultProvisioner;
 import uzelok.pipeline.ActionService;
 import uzelok.pipeline.DraftStep;
 import uzelok.pipeline.ExtractStep;
 import uzelok.pipeline.JobService;
 import uzelok.pipeline.JobStateMachine;
 import uzelok.pipeline.JobWorker;
+import uzelok.pipeline.OnboardingService;
 import uzelok.pipeline.RenderStep;
 import uzelok.pipeline.StatsService;
 import uzelok.pipeline.WriteStep;
 import uzelok.domain.port.PendingActionRepository;
+import java.nio.file.Path;
 import java.time.Clock;
 
 @Configuration(proxyBeanMethods = false)
@@ -76,6 +83,18 @@ public class PipelineConfig {
     public StatsService statsService(NoteRepository notes, JobRepository jobs,
                                      LlmCallRepository calls) {
         return new StatsService(notes, jobs, calls);
+    }
+
+    @Bean
+    public OnboardingHandler onboardingHandler(KnowledgeBaseRepository bases,
+                                               OnboardingSessionRepository sessions,
+                                               VaultProvisioner provisioner,
+                                               VaultInspector inspector,
+                                               AuditRepository audit,
+                                               Clock clock,
+                                               UzelokProperties properties) {
+        return new OnboardingService(bases, sessions, provisioner, inspector, audit, clock,
+                Path.of(properties.storage().vaultsDir()));
     }
 
     @Bean

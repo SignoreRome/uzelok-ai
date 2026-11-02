@@ -70,6 +70,16 @@ class LayerRulesTest {
     }
 
     @Test
+    void knowledgeDoesNotDependOnConfig() {
+        noClasses()
+                .that().resideInAPackage("uzelok.knowledge..")
+                .should().dependOnClassesThat()
+                .resideInAPackage("uzelok.config..")
+                .allowEmptyShould(true)
+                .check(MAIN_CLASSES);
+    }
+
+    @Test
     void telegramDoesNotDependOnConfig() {
         noClasses()
                 .that().resideInAPackage("uzelok.telegram..")
@@ -140,7 +150,8 @@ class LayerRulesTest {
     @Test
     void onlyLlmAndTelegramUseHttpClients() {
         noClasses()
-                .that().resideOutsideOfPackages("uzelok.llm..", "uzelok.telegram..")
+                .that().resideOutsideOfPackages("uzelok.llm..", "uzelok.telegram..",
+                        "uzelok.config..")
                 .and().doNotHaveFullyQualifiedName("uzelok.UzelokApplication")
                 .should().dependOnClassesThat()
                 .resideInAnyPackage(

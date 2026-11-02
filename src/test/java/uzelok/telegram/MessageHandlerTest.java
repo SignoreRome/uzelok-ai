@@ -33,6 +33,8 @@ import uzelok.support.InMemoryTelegramUpdateRepository;
 import uzelok.support.MutableClock;
 import uzelok.support.RecordingAuditRepository;
 import uzelok.support.TelegramUpdates;
+import uzelok.support.StubOnboardingHandler;
+import uzelok.support.StubVaultExporter;
 
 class MessageHandlerTest {
 
@@ -68,7 +70,7 @@ class MessageHandlerTest {
         access = new InMemoryAccessRepository()
                 .add(CHAT_ID, new ChatAccess(TENANT_ID, APP_USER_ID, FROM_ID, true));
         telegramProps = new UzelokProperties.Telegram(
-                "token", "test_bot", 30, 2000, 8000, 15_728_640L, 1_048_576L, 30_000_000L);
+                "token", "test_bot", "", 30, 2000, 8000, 15_728_640L, 1_048_576L, 30_000_000L);
         limits = new UzelokProperties.Limits(20, 5, 72);
         clock = Clock.fixed(Instant.parse("2026-01-15T10:00:00Z"), ZoneOffset.UTC);
         handler = handlerWith(new FixedKnowledgeBaseRepository(knowledgeBase()));
@@ -199,8 +201,8 @@ class MessageHandlerTest {
                 new UzelokProperties.Limits(1, 5, 72), mutableClock);
         InMemoryTelegramUpdateRepository updates = new InMemoryTelegramUpdateRepository();
         CallbackHandler callbacks = new CallbackHandler(access,
-                new InMemoryPendingActionRepository(), action -> ActionOutcome.ignored(), telegram,
-                audit, mutableClock);
+                new InMemoryPendingActionRepository(), action -> ActionOutcome.ignored(),
+                new StubOnboardingHandler(), telegram, new Messages(), audit, mutableClock);
         UpdateRouter router = new UpdateRouter(updates, handler, callbacks, audit);
 
         router.consume(List.of(TelegramUpdates.text(1, CHAT_ID, 500, FROM_ID, "первое")));
@@ -229,15 +231,18 @@ class MessageHandlerTest {
         Messages messages = new Messages();
         CommandHandler commands = new CommandHandler(telegram, messages, "test_bot", Map.of(),
                 access, jobs, new StatsService(new InMemoryNoteRepository(), jobs,
-                        new InMemoryLlmCallRepository()), usedClock);
+                        new InMemoryLlmCallRepository()), bases, new StubVaultExporter(), audit,
+                usedClock);
         AttachmentReceiver receiver = new AttachmentReceiver(
                 telegramProps,
-                new UzelokProperties.Storage(artifacts.toString()),
+                new UzelokProperties.Storage(artifacts.toString(),
+                        "/var/lib/uzelok/vaults", "/var/lib/uzelok/exports"),
                 attachments,
                 telegram,
                 messages);
         return new MessageHandler(access, bases, source, attachments, jobs, audit, telegram, commands,
-                receiver, usedClock, usedLimits, telegramProps, messages);
+                receiver, usedClock, usedLimits, telegramProps, messages,
+                new StubOnboardingHandler());
     }
 
 

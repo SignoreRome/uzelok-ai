@@ -1,6 +1,7 @@
 package uzelok.config;
 
 import java.time.Clock;
+import java.time.Duration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import tools.jackson.databind.json.JsonMapper;
@@ -27,7 +28,36 @@ public class LlmConfig {
 
     @Bean
     public HttpLlmClient httpLlmClient(JsonMapper jsonMapper, UzelokProperties properties) {
-        return new HttpLlmClient(jsonMapper, properties.llm().timeoutSeconds());
+        ProxySupport.ProxyConfig proxy = ProxySupport.parse(properties.llm().proxyUrl())
+                .orElse(null);
+        int timeoutSeconds = properties.llm().timeoutSeconds();
+        return new HttpLlmClient(okHttpClient(proxy, timeoutSeconds), jsonMapper, timeoutSeconds);
+    }
+
+    /**
+     * java.net.http не умеет Basic в CONNECT-туннеле (JDK блокирует такие схемы), поэтому
+     * прокси и Proxy-Authorization задаются явно на клиенте OkHttp.
+     */
+    private static okhttp3.OkHttpClient okHttpClient(ProxySupport.ProxyConfig proxy,
+                                                    int timeoutSeconds) {
+        okhttp3.OkHttpClient.Builder builder = new okhttp3.OkHttpClient.Builder()
+                .connectTimeout(Duration.ofSeconds(10))
+                .readTimeout(Duration.ofSeconds(timeoutSeconds))
+                .writeTimeout(Duration.ofSeconds(30))
+                .callTimeout(Duration.ofSeconds(timeoutSeconds + 10L))
+                .retryOnConnectionFailure(true);
+        if (proxy != null) {
+            builder.proxy(proxy.proxy());
+            if (proxy.hasCredentials()) {
+                String user = proxy.user();
+                char[] password = proxy.password();
+                builder.proxyAuthenticator((route, response) -> response.request().newBuilder()
+                        .header("Proxy-Authorization",
+                                okhttp3.Credentials.basic(user, new String(password)))
+                        .build());
+            }
+        }
+        return builder.build();
     }
 
     @Bean

@@ -1,5 +1,6 @@
 package uzelok.telegram;
 
+import java.nio.file.Path;
 import uzelok.domain.model.InlineKeyboard;
 import uzelok.domain.port.TelegramGateway;
 
@@ -24,6 +25,11 @@ public final class UnavailableTelegramGateway implements TelegramGateway {
 
     @Override
     public long sendDocument(long chatId, String fileName, byte[] content, String caption) {
+        throw new TelegramDeliveryException(MESSAGE);
+    }
+
+    @Override
+    public long sendDocumentFile(long chatId, String fileName, Path file, String caption) {
         throw new TelegramDeliveryException(MESSAGE);
     }
 }

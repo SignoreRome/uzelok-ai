@@ -24,6 +24,9 @@ import uzelok.support.InMemorySourceItemRepository;
 import uzelok.pipeline.StatsService;
 import uzelok.support.InMemoryTelegramGateway;
 import uzelok.support.MutableClock;
+import uzelok.support.FixedKnowledgeBaseRepository;
+import uzelok.support.RecordingAuditRepository;
+import uzelok.support.StubVaultExporter;
 
 class CommandHandlerTest {
 
@@ -55,7 +58,9 @@ class CommandHandlerTest {
                                 "gemini-4-argon"),
                         "draft", new CommandHandler.LlmStep("opencode-go", "gemini-4-argon",
                                 "deepseek-v4.1-flash")),
-                access, jobs, new StatsService(notes, jobs, calls), new MutableClock(NOW));
+                access, jobs, new StatsService(notes, jobs, calls),
+                new FixedKnowledgeBaseRepository(null), new StubVaultExporter(),
+                new RecordingAuditRepository(), new MutableClock(NOW));
     }
 
     @Test

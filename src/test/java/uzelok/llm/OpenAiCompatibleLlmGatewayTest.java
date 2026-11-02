@@ -7,6 +7,7 @@ import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.net.InetSocketAddress;
+import java.nio.file.Path;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Instant;
@@ -76,7 +77,8 @@ class OpenAiCompatibleLlmGatewayTest {
                                 new BigDecimal("0.10"), new BigDecimal("0.20"))),
                 "v1",
                 new BigDecimal("2.00"),
-                10);
+                10,
+                "");
         gateway = new OpenAiCompatibleLlmGateway(
                 new HttpLlmClient(mapper, 5),
                 new LlmRouter(properties),
@@ -99,7 +101,9 @@ class OpenAiCompatibleLlmGatewayTest {
     void successfulCallIsRecordedWithCost() {
         Extraction extraction = gateway.extract(context("hash-1", 0), List.of(), "материал");
 
-        assertThat(extraction.transcript()).isEqualTo("распознанный текст");
+        // текстовый материал не транскрибируется: transcript — это исходный текст
+        assertThat(extraction.transcript()).isEqualTo("материал");
+        assertThat(extraction.theses()).isNotEmpty();
         assertThat(calls.successes()).hasSize(1);
         LlmCallRecord call = calls.successes().getFirst();
         assertThat(call.provider()).isEqualTo("provider");
@@ -109,6 +113,19 @@ class OpenAiCompatibleLlmGatewayTest {
         assertThat(call.outputTokens()).isEqualTo(7);
         assertThat(call.costUsd()).isEqualByComparingTo(new BigDecimal("0.000026"));
         assertThat(call.responseText()).contains("распознанный текст");
+    }
+
+    @Test
+    void imageInputUsesTranscriptionPath() throws IOException {
+        Path image = java.nio.file.Files.createTempFile("uzelok-test", ".jpg");
+        java.nio.file.Files.write(image, new byte[] {(byte) 0xFF, (byte) 0xD8, (byte) 0xFF, 0x01});
+        try {
+            Extraction extraction = gateway.extract(context("image-hash", 0), List.of(image), "");
+
+            assertThat(extraction.transcript()).isEqualTo("распознанный текст");
+        } finally {
+            java.nio.file.Files.deleteIfExists(image);
+        }
     }
 
     @Test
@@ -127,7 +144,7 @@ class OpenAiCompatibleLlmGatewayTest {
 
         Extraction extraction = gateway.extract(context("fallback-hash", 0), List.of(), "материал");
 
-        assertThat(extraction.transcript()).isEqualTo("распознанный текст");
+        assertThat(extraction.transcript()).isEqualTo("материал");
         assertThat(serverCalls).hasValue(2);
         assertThat(calls.successes()).hasSize(1);
         assertThat(calls.successes().getFirst().model()).isEqualTo("fallback");
@@ -284,7 +301,8 @@ class OpenAiCompatibleLlmGatewayTest {
                 properties.pricing(),
                 properties.promptVersion(),
                 properties.dailyBudgetUsd(),
-                properties.timeoutSeconds());
+                properties.timeoutSeconds(),
+                properties.proxyUrl());
         server = replacement;
         return replacement;
     }

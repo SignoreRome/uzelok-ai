@@ -16,9 +16,24 @@ import uzelok.domain.port.KnowledgeBaseRepository;
 public class JdbcKnowledgeBaseRepository implements KnowledgeBaseRepository {
 
     private static final String SELECT_ACTIVE = """
-            SELECT id, kind, root_path, taxonomy_relpath, inbox_relpath
+            SELECT id, tenant_id, kind, root_path, taxonomy_relpath, inbox_relpath
             FROM knowledge_base
             WHERE tenant_id = :tenantId AND active
+            """;
+
+    private static final String SELECT_BY_ROOT_PATH = """
+            SELECT id, tenant_id, kind, root_path, taxonomy_relpath, inbox_relpath
+            FROM knowledge_base
+            WHERE root_path = :rootPath AND active
+            """;
+
+    private static final String UPSERT = """
+            INSERT INTO knowledge_base (id, tenant_id, kind, root_path, taxonomy_relpath,
+                                        inbox_relpath)
+            VALUES (:id, :tenantId, :kind, :rootPath, :taxonomyRelPath, :inboxRelPath)
+            ON CONFLICT (tenant_id) DO UPDATE
+            SET active = true
+            RETURNING id, tenant_id, kind, root_path, taxonomy_relpath, inbox_relpath
             """;
 
     private static final RowMapper<KnowledgeBase> ROW_MAPPER = (rs, rowNum) -> new KnowledgeBase(
@@ -42,5 +57,28 @@ public class JdbcKnowledgeBaseRepository implements KnowledgeBaseRepository {
                 new MapSqlParameterSource("tenantId", tenantId),
                 ROW_MAPPER);
         return found.stream().findFirst();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Optional<KnowledgeBase> findByRootPath(String rootPath) {
+        List<KnowledgeBase> found = jdbc.query(
+                SELECT_BY_ROOT_PATH,
+                new MapSqlParameterSource("rootPath", rootPath),
+                ROW_MAPPER);
+        return found.stream().findFirst();
+    }
+
+    @Override
+    @Transactional
+    public KnowledgeBase save(UUID tenantId, KnowledgeBase base) {
+        UUID id = base.id() == null ? UUID.randomUUID() : base.id();
+        return jdbc.queryForObject(UPSERT, new MapSqlParameterSource()
+                .addValue("id", id)
+                .addValue("tenantId", tenantId)
+                .addValue("kind", base.kind().name())
+                .addValue("rootPath", base.rootPath())
+                .addValue("taxonomyRelPath", base.taxonomyRelPath())
+                .addValue("inboxRelPath", base.inboxRelPath()), ROW_MAPPER);
     }
 }

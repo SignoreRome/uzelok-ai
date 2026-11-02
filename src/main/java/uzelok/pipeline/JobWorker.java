@@ -122,8 +122,14 @@ public final class JobWorker {
         }
         long backoffSeconds = Math.min(30L * attempt, 600L);
         jobs.scheduleRetry(job.id(), now.plusSeconds(backoffSeconds), stage, errorCode);
-        log.info("job_id={} step={} повтор через {} с (попытка {})",
-                job.id(), stage, backoffSeconds, attempt);
+        Throwable root = exception;
+        while (root.getCause() != null && root.getCause() != root) {
+            root = root.getCause();
+        }
+        log.warn("job_id={} step={} повтор через {} с (попытка {}) ошибка={}: {} причина={}: {}",
+                job.id(), stage, backoffSeconds, attempt,
+                exception.getClass().getSimpleName(), exception.getMessage(),
+                root.getClass().getSimpleName(), root.getMessage());
         return true;
     }
 

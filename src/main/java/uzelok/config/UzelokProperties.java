@@ -19,6 +19,7 @@ public record UzelokProperties(
     public record Telegram(
             String botToken,
             String botUsername,
+            @DefaultValue("") String proxyUrl,
             @DefaultValue("30") int pollTimeoutSeconds,
             @DefaultValue("2000") int mediaGroupWindowMs,
             @DefaultValue("8000") int maxTextChars,
@@ -27,7 +28,10 @@ public record UzelokProperties(
             @DefaultValue("30000000") long maxImagePixels) {
     }
 
-    public record Storage(@DefaultValue("/var/lib/uzelok/artifacts") String artifactsDir) {
+    public record Storage(
+            @DefaultValue("/var/lib/uzelok/artifacts") String artifactsDir,
+            @DefaultValue("/var/lib/uzelok/vaults") String vaultsDir,
+            @DefaultValue("/var/lib/uzelok/exports") String exportsDir) {
     }
 
     public record Limits(
@@ -42,7 +46,8 @@ public record UzelokProperties(
             Map<String, Pricing> pricing,
             @DefaultValue("v1") String promptVersion,
             @DefaultValue("2.00") BigDecimal dailyBudgetUsd,
-            @DefaultValue("120") int timeoutSeconds) {
+            @DefaultValue("120") int timeoutSeconds,
+            @DefaultValue("") String proxyUrl) {
 
         public Llm {
             providers = providers == null ? Map.of() : Map.copyOf(providers);
@@ -68,7 +73,9 @@ public record UzelokProperties(
             @DefaultValue("src/test/resources/lint-fixtures") String lintParityFixtures,
             @DefaultValue(".uzelok-tmp") String tmpDir,
             @DefaultValue("0.55") double confidenceThreshold,
-            @DefaultValue("60") int maxFileNameLength) {
+            @DefaultValue("60") int maxFileNameLength,
+            @DefaultValue("50000000") long exportMaxBytes,
+            @DefaultValue("5000") int exportMaxFiles) {
     }
 
     public record Worker(
