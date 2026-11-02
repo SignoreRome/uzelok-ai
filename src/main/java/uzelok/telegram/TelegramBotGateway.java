@@ -5,7 +5,6 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
-import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
@@ -30,20 +29,19 @@ public final class TelegramBotGateway implements TelegramGateway {
 
     private final TelegramClient client;
     private final String botToken;
-    private final HttpClient httpClient;
+    private final okhttp3.OkHttpClient httpClient;
 
     public TelegramBotGateway(TelegramClient client, String botToken) {
-        this(client, botToken, HttpClient.newBuilder()
-                .connectTimeout(java.time.Duration.ofSeconds(10))
-                .build());
+        this(client, botToken, new okhttp3.OkHttpClient());
     }
 
     /**
      * Скачивание файлов Bot API идёт мимо библиотеки, поэтому клиенту нужен тот же прокси,
-     * что и остальному трафику: иначе в сетях без прямого доступа к api.telegram.org
-     * приём фото и документов падает с TelegramDeliveryException.
+     * что и остальному трафику. Скачиваем OkHttp, а не {@code java.net.http}: JDK по умолчанию
+     * запрещает Basic-аутентификацию в CONNECT-туннеле (jdk.http.auth.tunneling.disabledSchemes),
+     * и прокси отвечает 407.
      */
-    public TelegramBotGateway(TelegramClient client, String botToken, HttpClient httpClient) {
+    public TelegramBotGateway(TelegramClient client, String botToken, okhttp3.OkHttpClient httpClient) {
         this.client = client;
         this.botToken = botToken;
         this.httpClient = httpClient;
@@ -103,34 +101,30 @@ public final class TelegramBotGateway implements TelegramGateway {
             throw new TelegramDeliveryException("не удалось получить файл из Telegram");
         }
 
-        HttpRequest request;
+        okhttp3.Request request;
         try {
-            request = HttpRequest.newBuilder(URI.create(file.getFileUrl(botToken)))
-                    .timeout(REQUEST_TIMEOUT)
-                    .GET()
+            request = new okhttp3.Request.Builder()
+                    .url(file.getFileUrl(botToken))
+                    .get()
                     .build();
         } catch (IllegalArgumentException exception) {
             throw new TelegramDeliveryException("не удалось построить URL файла");
         }
 
-        HttpResponse<InputStream> response;
-        try {
-            response = httpClient.send(request, HttpResponse.BodyHandlers.ofInputStream());
-        } catch (InterruptedException exception) {
-            Thread.currentThread().interrupt();
-            throw new TelegramDeliveryException("скачивание файла из Telegram прервано");
+        try (okhttp3.Response response = httpClient.newCall(request).execute()) {
+            if (!response.isSuccessful()) {
+                throw new TelegramDeliveryException(
+                        "Telegram вернул HTTP " + response.code() + " при скачивании файла");
+            }
+            okhttp3.ResponseBody body = response.body();
+            if (body == null) {
+                return new byte[0];
+            }
+            try (InputStream stream = body.byteStream()) {
+                return readLimited(stream, maxBytes);
+            }
         } catch (IOException exception) {
             throw new TelegramDeliveryException("не удалось скачать файл из Telegram");
-        }
-
-        try (InputStream body = response.body()) {
-            if (response.statusCode() < 200 || response.statusCode() >= 300) {
-                throw new TelegramDeliveryException(
-                        "Telegram вернул HTTP " + response.statusCode() + " при скачивании файла");
-            }
-            return readLimited(body, maxBytes);
-        } catch (IOException exception) {
-            throw new TelegramDeliveryException("не удалось прочитать файл из Telegram");
         }
     }
 
