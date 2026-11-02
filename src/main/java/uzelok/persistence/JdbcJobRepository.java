@@ -61,6 +61,51 @@ public class JdbcJobRepository implements JobRepository {
             WHERE s.chat_id = :chatId AND s.created_at >= :since
             """;
 
+    private static final String CLAIM_JOB = """
+            UPDATE processing_job
+            SET lease_until = :leaseUntil, updated_at = now()
+            WHERE id = (
+                SELECT id
+                FROM processing_job
+                WHERE status IN ('RECEIVED','EXTRACTING','DRAFTING','WRITING')
+                  AND next_run_at <= :now
+                  AND (lease_until IS NULL OR lease_until < :now)
+                ORDER BY next_run_at
+                LIMIT 1
+                FOR UPDATE SKIP LOCKED
+            )
+            RETURNING id, tenant_id, source_item_id, knowledge_base_id, status, failed_stage,
+                      attempt_count, next_run_at, lease_until, status_message_id, error_code,
+                      error_message, confirmed_at, created_at, updated_at
+            """;
+
+    private static final String RECLAIM_EXPIRED = """
+            UPDATE processing_job
+            SET attempt_count = attempt_count + 1, lease_until = NULL, updated_at = now()
+            WHERE lease_until IS NOT NULL AND lease_until < :now
+            """;
+
+    private static final String TRANSITION = """
+            UPDATE processing_job
+            SET status = :to, lease_until = NULL, updated_at = now()
+            WHERE id = :jobId AND status = :from
+            """;
+
+    private static final String SCHEDULE_RETRY = """
+            UPDATE processing_job
+            SET attempt_count = attempt_count + 1, next_run_at = :nextRunAt,
+                failed_stage = :stage, error_code = :errorCode, lease_until = NULL,
+                updated_at = now()
+            WHERE id = :jobId
+            """;
+
+    private static final String MARK_FAILED = """
+            UPDATE processing_job
+            SET status = 'FAILED', failed_stage = :stage, error_code = :errorCode,
+                error_message = :errorMessage, lease_until = NULL, updated_at = now()
+            WHERE id = :jobId
+            """;
+
     private static final RowMapper<ProcessingJob> ROW_MAPPER = (rs, rowNum) -> new ProcessingJob(
             rs.getObject("id", UUID.class),
             rs.getObject("tenant_id", UUID.class),
@@ -139,6 +184,64 @@ public class JdbcJobRepository implements JobRepository {
                         .addValue("since", toOffsetDateTime(since)),
                 Integer.class);
         return count == null ? 0 : count;
+    }
+
+    @Override
+    @Transactional
+    public Optional<ProcessingJob> claimNext(Instant now, Instant leaseUntil) {
+        List<ProcessingJob> claimed = jdbc.query(
+                CLAIM_JOB,
+                new MapSqlParameterSource()
+                        .addValue("now", toOffsetDateTime(now))
+                        .addValue("leaseUntil", toOffsetDateTime(leaseUntil)),
+                ROW_MAPPER);
+        return claimed.stream().findFirst();
+    }
+
+    @Override
+    @Transactional
+    public int reclaimExpiredLeases(Instant now) {
+        return jdbc.update(
+                RECLAIM_EXPIRED,
+                new MapSqlParameterSource("now", toOffsetDateTime(now)));
+    }
+
+    @Override
+    @Transactional
+    public boolean transition(UUID jobId, JobStatus from, JobStatus to) {
+        int updated = jdbc.update(
+                TRANSITION,
+                new MapSqlParameterSource()
+                        .addValue("jobId", jobId)
+                        .addValue("from", from.name())
+                        .addValue("to", to.name()));
+        return updated == 1;
+    }
+
+    @Override
+    @Transactional
+    public boolean scheduleRetry(UUID jobId, Instant nextRunAt, String stage, String errorCode) {
+        int updated = jdbc.update(
+                SCHEDULE_RETRY,
+                new MapSqlParameterSource()
+                        .addValue("jobId", jobId)
+                        .addValue("nextRunAt", toOffsetDateTime(nextRunAt))
+                        .addValue("stage", stage)
+                        .addValue("errorCode", errorCode));
+        return updated == 1;
+    }
+
+    @Override
+    @Transactional
+    public boolean markFailed(UUID jobId, String stage, String errorCode, String errorMessage) {
+        int updated = jdbc.update(
+                MARK_FAILED,
+                new MapSqlParameterSource()
+                        .addValue("jobId", jobId)
+                        .addValue("stage", stage)
+                        .addValue("errorCode", errorCode)
+                        .addValue("errorMessage", errorMessage));
+        return updated == 1;
     }
 
     private static MapSqlParameterSource insertParameters(ProcessingJob candidate) {

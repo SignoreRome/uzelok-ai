@@ -23,7 +23,9 @@ class UzelokPropertiesTest {
                     "uzelok.llm.steps.extract.model=vision-model",
                     "uzelok.llm.steps.extract.fallback-model=fallback-model",
                     "uzelok.llm.steps.draft.provider=opencode-go",
-                    "uzelok.llm.steps.draft.model=draft-model");
+                    "uzelok.llm.steps.draft.model=draft-model",
+                    "uzelok.llm.pricing.[opencode-go/draft-model].input-per-million=0.30",
+                    "uzelok.llm.pricing.[opencode-go/draft-model].output-per-million=1.20");
 
     @Test
     void bindsEveryConfigurationSection() {
@@ -63,6 +65,11 @@ class UzelokPropertiesTest {
                     .isEqualTo("fallback-model");
             assertThat(properties.llm().steps().get("draft").provider()).isEqualTo("opencode-go");
             assertThat(properties.llm().steps().get("draft").model()).isEqualTo("draft-model");
+            assertThat(properties.llm().pricing()).containsOnlyKeys("opencode-go/draft-model");
+            assertThat(properties.llm().pricing().get("opencode-go/draft-model").inputPerMillion())
+                    .isEqualByComparingTo(new BigDecimal("0.30"));
+            assertThat(properties.llm().pricing().get("opencode-go/draft-model").outputPerMillion())
+                    .isEqualByComparingTo(new BigDecimal("1.20"));
             assertThat(properties.llm().promptVersion()).isEqualTo("v1");
             assertThat(properties.llm().dailyBudgetUsd())
                     .isEqualByComparingTo(new BigDecimal("2.00"));

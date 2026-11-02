@@ -94,6 +94,16 @@ public class JdbcSourceItemRepository implements SourceItemRepository {
 
     @Override
     @Transactional(readOnly = true)
+    public Optional<SourceItem> findById(UUID id) {
+        List<SourceItem> found = jdbc.query(
+                SELECT_COLUMNS + " WHERE id = :id",
+                new MapSqlParameterSource("id", id),
+                ROW_MAPPER);
+        return found.stream().findFirst();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
     public Optional<SourceItem> findByChatAndMessage(long chatId, long telegramMessageId) {
         List<SourceItem> found = jdbc.query(
                 SELECT_BY_MESSAGE,

@@ -39,6 +39,7 @@ public record UzelokProperties(
     public record Llm(
             Map<String, Provider> providers,
             Map<String, Step> steps,
+            Map<String, Pricing> pricing,
             @DefaultValue("v1") String promptVersion,
             @DefaultValue("2.00") BigDecimal dailyBudgetUsd,
             @DefaultValue("120") int timeoutSeconds) {
@@ -46,6 +47,7 @@ public record UzelokProperties(
         public Llm {
             providers = providers == null ? Map.of() : Map.copyOf(providers);
             steps = steps == null ? Map.of() : Map.copyOf(steps);
+            pricing = pricing == null ? Map.of() : Map.copyOf(pricing);
         }
     }
 
@@ -53,6 +55,11 @@ public record UzelokProperties(
     }
 
     public record Step(String provider, String model, String fallbackModel) {
+    }
+
+    public record Pricing(
+            @DefaultValue("0") BigDecimal inputPerMillion,
+            @DefaultValue("0") BigDecimal outputPerMillion) {
     }
 
     public record Knowledge(

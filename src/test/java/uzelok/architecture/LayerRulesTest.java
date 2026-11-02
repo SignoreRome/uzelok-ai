@@ -32,7 +32,8 @@ class LayerRulesTest {
         classes()
                 .that().resideInAPackage("uzelok.pipeline..")
                 .should().onlyDependOnClassesThat()
-                .resideInAnyPackage("java..", "uzelok.domain..", "uzelok.pipeline..")
+                .resideInAnyPackage("java..", "org.slf4j..", "uzelok.domain..",
+                        "uzelok.pipeline..")
                 .allowEmptyShould(true)
                 .check(MAIN_CLASSES);
     }

@@ -100,6 +100,73 @@ public final class InMemoryJobRepository implements JobRepository {
         return count;
     }
 
+    @Override
+    public synchronized java.util.Optional<ProcessingJob> claimNext(Instant now, Instant leaseUntil) {
+        java.util.Optional<ProcessingJob> candidate = jobs.values().stream()
+                .filter(job -> isWorkStatus(job.status()))
+                .filter(job -> !job.nextRunAt().isAfter(now))
+                .filter(job -> job.leaseUntil() == null || job.leaseUntil().isBefore(now))
+                .min(java.util.Comparator.comparing(ProcessingJob::nextRunAt));
+        if (candidate.isEmpty()) {
+            return java.util.Optional.empty();
+        }
+        ProcessingJob job = candidate.get();
+        ProcessingJob claimed = copy(job, job.status(), job.attemptCount(), job.nextRunAt(),
+                leaseUntil, job.failedStage(), job.errorCode(), job.errorMessage(), now);
+        jobs.put(job.id(), claimed);
+        return java.util.Optional.of(claimed);
+    }
+
+    @Override
+    public synchronized int reclaimExpiredLeases(Instant now) {
+        int reclaimed = 0;
+        for (ProcessingJob job : java.util.List.copyOf(jobs.values())) {
+            if (job.leaseUntil() != null && job.leaseUntil().isBefore(now)) {
+                jobs.put(job.id(), copy(job, job.status(), job.attemptCount() + 1,
+                        job.nextRunAt(), null, job.failedStage(), job.errorCode(),
+                        job.errorMessage(), now));
+                reclaimed++;
+            }
+        }
+        return reclaimed;
+    }
+
+    @Override
+    public synchronized boolean transition(UUID jobId, JobStatus from, JobStatus to) {
+        ProcessingJob existing = jobs.get(jobId);
+        if (existing == null || existing.status() != from) {
+            return false;
+        }
+        jobs.put(jobId, copy(existing, to, existing.attemptCount(), existing.nextRunAt(), null,
+                existing.failedStage(), existing.errorCode(), existing.errorMessage(),
+                Instant.now()));
+        return true;
+    }
+
+    @Override
+    public synchronized boolean scheduleRetry(UUID jobId, Instant nextRunAt, String stage,
+                                              String errorCode) {
+        ProcessingJob existing = jobs.get(jobId);
+        if (existing == null) {
+            return false;
+        }
+        jobs.put(jobId, copy(existing, existing.status(), existing.attemptCount() + 1, nextRunAt,
+                null, stage, errorCode, existing.errorMessage(), Instant.now()));
+        return true;
+    }
+
+    @Override
+    public synchronized boolean markFailed(UUID jobId, String stage, String errorCode,
+                                           String errorMessage) {
+        ProcessingJob existing = jobs.get(jobId);
+        if (existing == null) {
+            return false;
+        }
+        jobs.put(jobId, copy(existing, JobStatus.FAILED, existing.attemptCount(),
+                existing.nextRunAt(), null, stage, errorCode, errorMessage, Instant.now()));
+        return true;
+    }
+
     public synchronized int size() {
         return jobs.size();
     }
@@ -110,6 +177,32 @@ public final class InMemoryJobRepository implements JobRepository {
 
     public synchronized java.util.List<ProcessingJob> all() {
         return java.util.List.copyOf(jobs.values());
+    }
+
+    private static boolean isWorkStatus(JobStatus status) {
+        return status == JobStatus.RECEIVED || status == JobStatus.EXTRACTING
+                || status == JobStatus.DRAFTING || status == JobStatus.WRITING;
+    }
+
+    private static ProcessingJob copy(ProcessingJob job, JobStatus status, int attemptCount,
+                                      Instant nextRunAt, Instant leaseUntil, String failedStage,
+                                      String errorCode, String errorMessage, Instant updatedAt) {
+        return new ProcessingJob(
+                job.id(),
+                job.tenantId(),
+                job.sourceItemId(),
+                job.knowledgeBaseId(),
+                status,
+                failedStage,
+                attemptCount,
+                nextRunAt,
+                leaseUntil,
+                job.statusMessageId(),
+                errorCode,
+                errorMessage,
+                job.confirmedAt(),
+                job.createdAt(),
+                updatedAt);
     }
 
     private static ProcessingJob withStatusMessage(ProcessingJob job, long messageId) {

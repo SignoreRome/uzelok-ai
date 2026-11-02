@@ -12,6 +12,8 @@ public interface SourceItemRepository {
      */
     SourceItemCreation ensure(SourceItem candidate);
 
+    Optional<SourceItem> findById(UUID id);
+
     Optional<SourceItem> findByChatAndMessage(long chatId, long telegramMessageId);
 
     Optional<SourceItem> findByChatAndMediaGroup(long chatId, String mediaGroupId);

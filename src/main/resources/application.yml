@@ -27,18 +27,29 @@ uzelok:
     providers:
       openrouter:
         base-url: https://openrouter.ai/api/v1
-        api-key: ${UZELOK_OPENROUTER_API_KEY}
+        api-key: ${UZELOK_LLM_OPENROUTER_KEY:}
       opencode-go:
         base-url: https://opencode.ai/zen/go/v1
-        api-key: ${UZELOK_OPENCODE_API_KEY}
+        api-key: ${UZELOK_LLM_OPENCODE_GO_KEY:}
     steps:
       extract:
-        provider: openrouter
-        model: anthropic/claude-haiku-5-5
-        fallback-model: google/gemini-4-argon
+        provider: opencode-go
+        model: claude-haiku-5-5
+        fallback-model: gemini-4-argon
       draft:
         provider: opencode-go
-        model: deepseek-v4.1-flash
+        model: gemini-4-argon
+        fallback-model: deepseek-v4.1-flash
+    pricing:
+      "[opencode-go/deepseek-v4.1-flash]":
+        input-per-million: 0.30
+        output-per-million: 1.20
+      "[opencode-go/gemini-4-argon]":
+        input-per-million: 2.00
+        output-per-million: 10.00
+      "[opencode-go/claude-haiku-5-5]":
+        input-per-million: 0.10
+        output-per-million: 0.50
     prompt-version: v1
     daily-budget-usd: 2.00
     timeout-seconds: 120
