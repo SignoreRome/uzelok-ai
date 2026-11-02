@@ -17,8 +17,12 @@ public final class InMemoryTelegramGateway implements TelegramGateway {
     public record EditedMessage(long chatId, long messageId, String text, InlineKeyboard keyboard) {
     }
 
+    public record SentDocument(long chatId, String fileName, byte[] content, String caption) {
+    }
+
     private final List<SentMessage> sent = new ArrayList<>();
     private final List<EditedMessage> edited = new ArrayList<>();
+    private final List<SentDocument> documents = new ArrayList<>();
     private final Map<String, byte[]> files = new HashMap<>();
     private final List<String> downloadCalls = new ArrayList<>();
     private long nextMessageId = 1000;
@@ -46,6 +50,13 @@ public final class InMemoryTelegramGateway implements TelegramGateway {
     }
 
     @Override
+    public synchronized long sendDocument(long chatId, String fileName, byte[] content,
+                                          String caption) {
+        documents.add(new SentDocument(chatId, fileName, content.clone(), caption));
+        return nextMessageId++;
+    }
+
+    @Override
     public synchronized byte[] download(String fileId, long maxBytes) {
         downloadCalls.add(fileId);
         if (downloadFailure != null) {
@@ -67,6 +78,10 @@ public final class InMemoryTelegramGateway implements TelegramGateway {
 
     public synchronized List<EditedMessage> edited() {
         return List.copyOf(edited);
+    }
+
+    public synchronized List<SentDocument> documents() {
+        return List.copyOf(documents);
     }
 
     public synchronized List<String> downloadCalls() {

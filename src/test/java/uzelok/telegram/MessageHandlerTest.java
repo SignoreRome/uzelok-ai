@@ -6,21 +6,27 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import java.nio.file.Path;
 import uzelok.config.UzelokProperties;
+import uzelok.domain.model.ActionOutcome;
 import uzelok.domain.model.ChatAccess;
 import uzelok.domain.model.JobStatus;
 import uzelok.domain.model.KnowledgeBase;
 import uzelok.domain.model.KnowledgeBaseKind;
 import uzelok.domain.model.ProcessingJob;
+import uzelok.pipeline.StatsService;
 import uzelok.support.FixedKnowledgeBaseRepository;
 import uzelok.support.InMemoryAccessRepository;
 import uzelok.support.InMemoryAttachmentRepository;
 import uzelok.support.InMemoryJobRepository;
+import uzelok.support.InMemoryLlmCallRepository;
+import uzelok.support.InMemoryNoteRepository;
+import uzelok.support.InMemoryPendingActionRepository;
 import uzelok.support.InMemorySourceItemRepository;
 import uzelok.support.InMemoryTelegramGateway;
 import uzelok.support.InMemoryTelegramUpdateRepository;
@@ -192,7 +198,9 @@ class MessageHandlerTest {
         handler = handlerWith(new FixedKnowledgeBaseRepository(knowledgeBase()),
                 new UzelokProperties.Limits(1, 5, 72), mutableClock);
         InMemoryTelegramUpdateRepository updates = new InMemoryTelegramUpdateRepository();
-        CallbackHandler callbacks = new CallbackHandler(audit, access);
+        CallbackHandler callbacks = new CallbackHandler(access,
+                new InMemoryPendingActionRepository(), action -> ActionOutcome.ignored(), telegram,
+                audit, mutableClock);
         UpdateRouter router = new UpdateRouter(updates, handler, callbacks, audit);
 
         router.consume(List.of(TelegramUpdates.text(1, CHAT_ID, 500, FROM_ID, "первое")));
@@ -219,7 +227,9 @@ class MessageHandlerTest {
     private MessageHandler handlerWith(uzelok.domain.port.KnowledgeBaseRepository bases,
                                        UzelokProperties.Limits usedLimits, Clock usedClock) {
         Messages messages = new Messages();
-        CommandHandler commands = new CommandHandler(telegram, messages, telegramProps);
+        CommandHandler commands = new CommandHandler(telegram, messages, "test_bot", Map.of(),
+                access, jobs, new StatsService(new InMemoryNoteRepository(), jobs,
+                        new InMemoryLlmCallRepository()), usedClock);
         AttachmentReceiver receiver = new AttachmentReceiver(
                 telegramProps,
                 new UzelokProperties.Storage(artifacts.toString()),
@@ -229,6 +239,7 @@ class MessageHandlerTest {
         return new MessageHandler(access, bases, source, attachments, jobs, audit, telegram, commands,
                 receiver, usedClock, usedLimits, telegramProps, messages);
     }
+
 
     private static KnowledgeBase knowledgeBase() {
         return new KnowledgeBase(

@@ -40,9 +40,10 @@ public final class DraftStep {
     }
 
     public NoteDraft run(ProcessingJob job) {
-        Optional<JobArtifact> existing = artifacts.findLatest(job.id(), ArtifactKind.DRAFT_JSON);
-        if (existing.isPresent()) {
-            return json.read(existing.get().inlineText(), NoteDraft.class);
+        int draftVersion = job.draftVersion() + 1;
+        Optional<JobArtifact> latest = artifacts.findLatest(job.id(), ArtifactKind.DRAFT_JSON);
+        if (latest.isPresent() && latest.get().version() == draftVersion) {
+            return json.read(latest.get().inlineText(), NoteDraft.class);
         }
 
         JobArtifact extractionArtifact = artifacts.findLatest(job.id(), ArtifactKind.EXTRACTION)
@@ -52,9 +53,6 @@ public final class DraftStep {
         KnowledgeBase base = base(job);
         Taxonomy taxonomy = knowledge.taxonomy(base);
         Set<String> existingNames = knowledge.existingNoteNames(base);
-        int draftVersion = artifacts.findLatest(job.id(), ArtifactKind.DRAFT_JSON)
-                .map(artifact -> artifact.version() + 1)
-                .orElse(1);
 
         LlmContext context = new LlmContext(job.tenantId(), job.id(), "DRAFT",
                 extractionArtifact.sha256(), draftVersion);

@@ -29,17 +29,20 @@ public final class JobWorker {
     private final ExtractStep extract;
     private final DraftStep draft;
     private final RenderStep render;
+    private final WriteStep write;
     private final JobNotifier notifier;
     private final int leaseMinutes;
     private final int maxAttempts;
 
     public JobWorker(JobRepository jobs, JobService state, ExtractStep extract, DraftStep draft,
-                     RenderStep render, JobNotifier notifier, int leaseMinutes, int maxAttempts) {
+                     RenderStep render, WriteStep write, JobNotifier notifier, int leaseMinutes,
+                     int maxAttempts) {
         this.jobs = jobs;
         this.state = state;
         this.extract = extract;
         this.draft = draft;
         this.render = render;
+        this.write = write;
         this.notifier = notifier;
         this.leaseMinutes = leaseMinutes;
         this.maxAttempts = maxAttempts;
@@ -99,6 +102,12 @@ public final class JobWorker {
                 state.transition(job, JobStatus.AWAITING_CONFIRM);
                 yield new StepOutcome(true, JobStatus.AWAITING_CONFIRM);
             }
+            case WRITING -> {
+                WriteStep.WriteResult result = write.run(job);
+                state.transition(job, JobStatus.DONE);
+                notifier.saved(job, result.note().relPath());
+                yield new StepOutcome(true, JobStatus.DONE);
+            }
             default -> new StepOutcome(false, job.status());
         };
     }
@@ -149,6 +158,8 @@ public final class JobWorker {
                 errorMessage,
                 job.confirmedAt(),
                 job.createdAt(),
-                job.updatedAt());
+                job.updatedAt(),
+                job.draftVersion(),
+                job.forceInbox());
     }
 }

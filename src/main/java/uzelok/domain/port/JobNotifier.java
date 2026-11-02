@@ -7,5 +7,8 @@ public interface JobNotifier {
 
     void preview(PreviewView view);
 
+    default void saved(ProcessingJob job, String relPath) {
+    }
+
     void failed(ProcessingJob job, String userMessage);
 }

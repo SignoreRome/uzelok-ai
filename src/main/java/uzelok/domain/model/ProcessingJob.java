@@ -18,5 +18,28 @@ public record ProcessingJob(
         String errorMessage,
         Instant confirmedAt,
         Instant createdAt,
-        Instant updatedAt) {
+        Instant updatedAt,
+        int draftVersion,
+        boolean forceInbox) {
+
+    public ProcessingJob(
+            UUID id,
+            UUID tenantId,
+            UUID sourceItemId,
+            UUID knowledgeBaseId,
+            JobStatus status,
+            String failedStage,
+            int attemptCount,
+            Instant nextRunAt,
+            Instant leaseUntil,
+            Long statusMessageId,
+            String errorCode,
+            String errorMessage,
+            Instant confirmedAt,
+            Instant createdAt,
+            Instant updatedAt) {
+        this(id, tenantId, sourceItemId, knowledgeBaseId, status, failedStage, attemptCount,
+                nextRunAt, leaseUntil, statusMessageId, errorCode, errorMessage, confirmedAt,
+                createdAt, updatedAt, 0, false);
+    }
 }

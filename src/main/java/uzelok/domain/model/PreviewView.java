@@ -11,6 +11,7 @@ public record PreviewView(
         String topic,
         String summary,
         String bodyExcerpt,
+        String fullMarkdown,
         List<String> warnings) {
 
     public PreviewView {

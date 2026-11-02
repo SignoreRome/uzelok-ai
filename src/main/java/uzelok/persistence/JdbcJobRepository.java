@@ -22,26 +22,43 @@ public class JdbcJobRepository implements JobRepository {
     private static final String SELECT_COLUMNS = """
             SELECT id, tenant_id, source_item_id, knowledge_base_id, status, failed_stage,
                    attempt_count, next_run_at, lease_until, status_message_id, error_code,
-                   error_message, confirmed_at, created_at, updated_at
+                   error_message, confirmed_at, created_at, updated_at, draft_version,
+                   force_inbox
             FROM processing_job
             """;
 
     private static final String SELECT_BY_SOURCE_ITEM = SELECT_COLUMNS
             + " WHERE source_item_id = :sourceItemId";
 
+    private static final String SELECT_BY_ID = SELECT_COLUMNS + " WHERE id = :jobId";
+
+    private static final String SELECT_ACTIVE_BY_CHAT = """
+            SELECT j.id, j.tenant_id, j.source_item_id, j.knowledge_base_id, j.status,
+                   j.failed_stage, j.attempt_count, j.next_run_at, j.lease_until,
+                   j.status_message_id, j.error_code, j.error_message, j.confirmed_at,
+                   j.created_at, j.updated_at, j.draft_version, j.force_inbox
+            FROM processing_job j
+            JOIN source_item s ON s.id = j.source_item_id
+            WHERE s.chat_id = :chatId
+              AND j.status IN ('AWAITING_CONFIRM','FAILED')
+            ORDER BY j.updated_at DESC
+            LIMIT 1
+            """;
+
     private static final String INSERT_JOB = """
             INSERT INTO processing_job (id, tenant_id, source_item_id, knowledge_base_id, status,
                                         failed_stage, attempt_count, next_run_at, lease_until,
                                         status_message_id, error_code, error_message, confirmed_at,
-                                        created_at, updated_at)
+                                        created_at, updated_at, draft_version, force_inbox)
             VALUES (:id, :tenantId, :sourceItemId, :knowledgeBaseId, 'RECEIVED',
                     :failedStage, :attemptCount, :nextRunAt, :leaseUntil,
                     :statusMessageId, :errorCode, :errorMessage, :confirmedAt,
-                    :createdAt, :updatedAt)
+                    :createdAt, :updatedAt, :draftVersion, :forceInbox)
             ON CONFLICT (source_item_id) DO NOTHING
             RETURNING id, tenant_id, source_item_id, knowledge_base_id, status, failed_stage,
                       attempt_count, next_run_at, lease_until, status_message_id, error_code,
-                      error_message, confirmed_at, created_at, updated_at
+                      error_message, confirmed_at, created_at, updated_at, draft_version,
+                      force_inbox
             """;
 
     private static final String ATTACH_STATUS_MESSAGE = """
@@ -76,7 +93,8 @@ public class JdbcJobRepository implements JobRepository {
             )
             RETURNING id, tenant_id, source_item_id, knowledge_base_id, status, failed_stage,
                       attempt_count, next_run_at, lease_until, status_message_id, error_code,
-                      error_message, confirmed_at, created_at, updated_at
+                      error_message, confirmed_at, created_at, updated_at, draft_version,
+                      force_inbox
             """;
 
     private static final String RECLAIM_EXPIRED = """
@@ -87,8 +105,28 @@ public class JdbcJobRepository implements JobRepository {
 
     private static final String TRANSITION = """
             UPDATE processing_job
-            SET status = :to, lease_until = NULL, updated_at = now()
+            SET status = :to, error_code = NULL, error_message = NULL, lease_until = NULL,
+                updated_at = now()
             WHERE id = :jobId AND status = :from
+            """;
+
+    private static final String START_WRITING = """
+            UPDATE processing_job
+            SET status = 'WRITING', force_inbox = :forceInbox, lease_until = NULL,
+                updated_at = now()
+            WHERE id = :jobId AND status = 'AWAITING_CONFIRM'
+            """;
+
+    private static final String START_REGENERATION = """
+            UPDATE processing_job
+            SET draft_version = draft_version + 1, status = 'DRAFTING', lease_until = NULL,
+                updated_at = now()
+            WHERE id = :jobId AND status = 'AWAITING_CONFIRM'
+            """;
+
+    private static final String COUNT_FOR_TENANT_SINCE = """
+            SELECT COUNT(*) FROM processing_job
+            WHERE tenant_id = :tenantId AND created_at >= :since
             """;
 
     private static final String SCHEDULE_RETRY = """
@@ -106,6 +144,14 @@ public class JdbcJobRepository implements JobRepository {
             WHERE id = :jobId
             """;
 
+    private static final String RETRY_FAILED = """
+            UPDATE processing_job
+            SET status = :target, attempt_count = attempt_count + 1, failed_stage = NULL,
+                error_code = NULL, error_message = NULL, lease_until = NULL,
+                next_run_at = now(), updated_at = now()
+            WHERE id = :jobId AND status = 'FAILED' AND attempt_count < :maxAttempts
+            """;
+
     private static final RowMapper<ProcessingJob> ROW_MAPPER = (rs, rowNum) -> new ProcessingJob(
             rs.getObject("id", UUID.class),
             rs.getObject("tenant_id", UUID.class),
@@ -121,7 +167,9 @@ public class JdbcJobRepository implements JobRepository {
             rs.getString("error_message"),
             toInstant(rs.getObject("confirmed_at", OffsetDateTime.class)),
             toInstant(rs.getObject("created_at", OffsetDateTime.class)),
-            toInstant(rs.getObject("updated_at", OffsetDateTime.class)));
+            toInstant(rs.getObject("updated_at", OffsetDateTime.class)),
+            rs.getInt("draft_version"),
+            rs.getBoolean("force_inbox"));
 
     private final NamedParameterJdbcTemplate jdbc;
 
@@ -140,6 +188,26 @@ public class JdbcJobRepository implements JobRepository {
     }
 
     @Override
+    @Transactional(readOnly = true)
+    public Optional<ProcessingJob> find(UUID jobId) {
+        List<ProcessingJob> found = jdbc.query(
+                SELECT_BY_ID,
+                new MapSqlParameterSource("jobId", jobId),
+                ROW_MAPPER);
+        return found.stream().findFirst();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Optional<ProcessingJob> findActiveByChat(long chatId) {
+        List<ProcessingJob> found = jdbc.query(
+                SELECT_ACTIVE_BY_CHAT,
+                new MapSqlParameterSource("chatId", chatId),
+                ROW_MAPPER);
+        return found.stream().findFirst();
+    }
+
+    @Override
     @Transactional
     public JobCreation createIfAbsent(ProcessingJob candidate) {
         List<ProcessingJob> created = jdbc.query(INSERT_JOB, insertParameters(candidate), ROW_MAPPER);
@@ -150,6 +218,26 @@ public class JdbcJobRepository implements JobRepository {
                 .orElseThrow(() -> new IllegalStateException(
                         "не удалось прочитать processing_job после вставки"));
         return new JobCreation(existing, false);
+    }
+
+    @Override
+    @Transactional
+    public boolean startWriting(UUID jobId, boolean forceInbox) {
+        int updated = jdbc.update(
+                START_WRITING,
+                new MapSqlParameterSource()
+                        .addValue("jobId", jobId)
+                        .addValue("forceInbox", forceInbox));
+        return updated == 1;
+    }
+
+    @Override
+    @Transactional
+    public boolean startRegeneration(UUID jobId) {
+        int updated = jdbc.update(
+                START_REGENERATION,
+                new MapSqlParameterSource("jobId", jobId));
+        return updated == 1;
     }
 
     @Override
@@ -181,6 +269,18 @@ public class JdbcJobRepository implements JobRepository {
                 COUNT_FOR_CHAT_SINCE,
                 new MapSqlParameterSource()
                         .addValue("chatId", chatId)
+                        .addValue("since", toOffsetDateTime(since)),
+                Integer.class);
+        return count == null ? 0 : count;
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public int countForTenantSince(UUID tenantId, Instant since) {
+        Integer count = jdbc.queryForObject(
+                COUNT_FOR_TENANT_SINCE,
+                new MapSqlParameterSource()
+                        .addValue("tenantId", tenantId)
                         .addValue("since", toOffsetDateTime(since)),
                 Integer.class);
         return count == null ? 0 : count;
@@ -244,6 +344,18 @@ public class JdbcJobRepository implements JobRepository {
         return updated == 1;
     }
 
+    @Override
+    @Transactional
+    public boolean retryFailed(UUID jobId, JobStatus target, int maxAttempts) {
+        int updated = jdbc.update(
+                RETRY_FAILED,
+                new MapSqlParameterSource()
+                        .addValue("jobId", jobId)
+                        .addValue("target", target.name())
+                        .addValue("maxAttempts", maxAttempts));
+        return updated == 1;
+    }
+
     private static MapSqlParameterSource insertParameters(ProcessingJob candidate) {
         Instant createdAt = candidate.createdAt() == null ? Instant.now() : candidate.createdAt();
         Instant updatedAt = candidate.updatedAt() == null ? createdAt : candidate.updatedAt();
@@ -262,7 +374,9 @@ public class JdbcJobRepository implements JobRepository {
                 .addValue("errorMessage", candidate.errorMessage())
                 .addValue("confirmedAt", toOffsetDateTime(candidate.confirmedAt()))
                 .addValue("createdAt", toOffsetDateTime(createdAt))
-                .addValue("updatedAt", toOffsetDateTime(updatedAt));
+                .addValue("updatedAt", toOffsetDateTime(updatedAt))
+                .addValue("draftVersion", candidate.draftVersion())
+                .addValue("forceInbox", candidate.forceInbox());
     }
 
     private static Long nullableLong(Long value) {
