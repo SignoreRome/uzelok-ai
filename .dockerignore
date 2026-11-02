@@ -1,0 +1,7 @@
+.gradle/
+.git/
+docs/
+deploy/
+src/
+gradle/
+*.md

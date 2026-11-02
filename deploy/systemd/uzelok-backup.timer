@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily Uzelok backup
+
+[Timer]
+OnCalendar=*-*-* 03:40:00
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=default.target

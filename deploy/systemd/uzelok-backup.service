@@ -1,0 +1,11 @@
+[Unit]
+Description=Uzelok backup: PostgreSQL dump and internal vaults
+
+[Service]
+Type=oneshot
+Environment=KUBECONFIG=/home/roman/.kube/config
+ExecStart=/mnt/hdd/workspace/uzelok-ai/scripts/pg-dump.sh
+ExecStart=/mnt/hdd/workspace/uzelok-ai/scripts/backup-vaults.sh
+
+[Install]
+WantedBy=default.target
