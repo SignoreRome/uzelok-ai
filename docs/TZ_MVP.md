@@ -184,8 +184,11 @@ LLM-провайдер (OpenAI-совместимый API), Obsidian-совме�
 - **FR-8.** Каждый шаг сохраняет результат в `job_artifact` до перехода к следующему шагу. Повторный запуск
   job не выполняет шаг, у которого есть артефакт, кроме случая явной перегенерации.
 - **FR-9.** Вызов LLM идемпотентен по
-  `request_key = sha256(step | input_hash | model | prompt_version | draft_version)`, где `draft_version` —
-  номер версии артефакта черновика (1 для первого прогона, 2+ для перегенераций). При наличии успешного
+  `request_key = sha256(step | tenant_id | input_hash | model | prompt_version | draft_version | prompt_variant)`,
+  где `draft_version` — номер версии артефакта черновика (1 для первого прогона, 2+ для перегенераций),
+  а `prompt_variant` — режим черновика (`free` для нейтральной базы, `dictionary` для базы с контрактом;
+  для распознавания — пустая строка). `tenant_id` в ключе обязателен: кэш общий на таблицу, без него
+  ответ одного пользователя отдавался бы другому при совпадении материала. При наличии успешного
   `llm_call` с тем же ключом повторный вызов не выполняется, используется сохранённый ответ; нажатие
   «Перегенерировать» всегда создаёт новый ключ и не возвращает закэшированный черновик.
 - **FR-9a.** Артефакт `EXTRACTION` (транскрипция + тезисы) сохраняется для всех типов входа, включая
@@ -905,7 +908,8 @@ summary: "одно предложение до 150 символов"
 
 - Один `source_item` → один `processing_job` (`UNIQUE(source_item_id)`).
 - Один `note.id` ↔ один файл; повторная запись с тем же `content_hash` — no-op.
-- `llm_call.request_key` уникален: `sha256(step|input_sha256|model|prompt_version|draft_version)`.
+- `llm_call.request_key` уникален:
+  `sha256(step|tenant_id|input_sha256|model|prompt_version|draft_version|prompt_variant)`.
 - Переход статуса — `UPDATE processing_job SET status = :to WHERE id = :id AND status = :from`;
   0 строк → переход отклонён (конкурентный обработчик уже сдвинул состояние).
 - Lease: воркер ставит `lease_until = now() + 10 min` при захвате и **обнуляет его при каждом переходе**

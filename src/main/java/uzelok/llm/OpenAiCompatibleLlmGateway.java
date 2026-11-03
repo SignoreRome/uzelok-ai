@@ -73,7 +73,7 @@ public final class OpenAiCompatibleLlmGateway implements LlmGateway {
     public Extraction extract(LlmContext context, List<Path> images, String text) {
         String step = step(context);
         LlmRouter.Route route = router.route("extract");
-        Optional<String> cached = findCached(route, step, context);
+        Optional<String> cached = findCached(route, step, context, "");
         if (cached.isPresent()) {
             return parseExtraction(cached.get());
         }
@@ -82,11 +82,11 @@ public final class OpenAiCompatibleLlmGateway implements LlmGateway {
             // Текстовый материал уже расшифрован: транскрибировать нечего, нужны только тезисы.
             // Промпт распознавания на таком входе даёт пустой transcript и валит контракт.
             return call(route, context, step, prompts.theses(), text, List.of(), "theses",
-                    StructuredSchemas.THESES,
+                    StructuredSchemas.THESES, "",
                     content -> parseTheses(text, content));
         }
         return call(route, context, step, prompts.extract(),
-                text == null ? "" : text, images, "extract", StructuredSchemas.EXTRACT,
+                text == null ? "" : text, images, "extract", StructuredSchemas.EXTRACT, "",
                 this::parseExtraction);
     }
 
@@ -95,19 +95,22 @@ public final class OpenAiCompatibleLlmGateway implements LlmGateway {
                            Set<String> existingNames) {
         String step = step(context);
         LlmRouter.Route route = router.route("draft");
-        Optional<String> cached = findCached(route, step, context);
+        String variant = taxonomy.isFree() ? "free" : "dictionary";
+        Optional<String> cached = findCached(route, step, context, variant);
         if (cached.isPresent()) {
             return parseDraft(cached.get());
         }
         checkBudget(context.tenantId());
         String userPrompt = draftPrompt(extraction, taxonomy, existingNames);
         return call(route, context, step, prompts.draft(), userPrompt, List.of(),
-                "draft", StructuredSchemas.DRAFT, this::parseDraft);
+                "draft", StructuredSchemas.DRAFT, variant, this::parseDraft);
     }
 
-    private Optional<String> findCached(LlmRouter.Route route, String step, LlmContext context) {
+    private Optional<String> findCached(LlmRouter.Route route, String step, LlmContext context,
+                                        String variant) {
         for (String model : route.models()) {
-            Optional<String> cached = calls.findSuccessfulResponse(requestKey(step, context, model));
+            Optional<String> cached =
+                    calls.findSuccessfulResponse(requestKey(step, context, model, variant));
             if (cached.isPresent()) {
                 return cached;
             }
@@ -117,13 +120,14 @@ public final class OpenAiCompatibleLlmGateway implements LlmGateway {
 
     private <T> T call(LlmRouter.Route route, LlmContext context, String step,
                        String systemPrompt, String userPrompt, List<Path> images,
-                       String schemaName, String jsonSchema, Function<String, T> parser) {
+                       String schemaName, String jsonSchema, String variant,
+                       Function<String, T> parser) {
         LlmCallFailed lastFailure = null;
         String lastModel = route.models().getFirst();
-        String lastRequestKey = requestKey(step, context, lastModel);
+        String lastRequestKey = requestKey(step, context, lastModel, variant);
         for (String model : route.models()) {
             lastModel = model;
-            String requestKey = requestKey(step, context, model);
+            String requestKey = requestKey(step, context, model, variant);
             lastRequestKey = requestKey;
             HttpLlmClient.LlmHttpResponse response;
             try {
@@ -219,9 +223,9 @@ public final class OpenAiCompatibleLlmGateway implements LlmGateway {
         return input.add(output).setScale(6, RoundingMode.HALF_UP);
     }
 
-    private String requestKey(String step, LlmContext context, String model) {
-        return LlmRequestKey.of(step, context.inputHash(), model, prompts.version(),
-                context.draftVersion());
+    private String requestKey(String step, LlmContext context, String model, String variant) {
+        return LlmRequestKey.of(step, context.tenantId(), context.inputHash(), model,
+                prompts.version(), context.draftVersion(), variant);
     }
 
     private static String step(LlmContext context) {

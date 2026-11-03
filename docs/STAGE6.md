@@ -99,8 +99,8 @@ summary: "одно предложение до 150 символов"
     напрямую;
   - `writeAtomically` пишет временный файл `<targetParent>/.uzelok-tmp-<uuid>` и удаляет его в
     `finally`; каталог `.uzelok-tmp/` в корне базы не используется;
-  - удалить `awaitGitIndexLock`, `gitAware()`, `LINT_COPY_SKIPPED` дополнить `README.md` не нужно,
-    но копия для линтера больше не включает `.git` как особенность.
+  - удалить `awaitGitIndexLock`, `gitAware()`; в `LINT_COPY_SKIPPED` остаются только скрытые
+    каталоги (`.obsidian`, `.trash`), `README.md` — обычный файл базы;
 - `ExternalObsidianStore` — `layout()` = `validator.validate(base)`, `lintRequired()` = true.
 - `InternalDirStore` — переименовать в `PlainVaultStore`; `layout()` =
   `new Layout(root.resolve("notes"), Taxonomy.free(), List.of())`, `lintRequired()` = false;
@@ -128,6 +128,10 @@ summary: "одно предложение до 150 символов"
 
 - `OpenAiCompatibleLlmGateway.draftPrompt`: добавить `"taxonomy_mode": "free"|"dictionary"`;
   в `free` массив `taxonomy` пустой.
+- `LlmRequestKey`: в ключ идемпотентности входят тенант и вариант промпта
+  (`free`/`dictionary`). Причина: кэш общий на таблицу `llm_call`, и одинаковый материал у двух
+  тенантов или в двух режимах таксономии даёт разные черновики. Без этого второй пользователь
+  получал бы чужой ответ, а нейтральная база — черновик с идентификатором темы из словаря.
 - `src/main/resources/prompts/draft-v2.md` — копия v1 с правилом: «если `taxonomy_mode = free`,
   `topic` — короткое название темы (2–4 слова) на языке материала, без кавычек».
   `draft-v1.md` оставить (историчные ключи `llm_call` на него ссылаются).
