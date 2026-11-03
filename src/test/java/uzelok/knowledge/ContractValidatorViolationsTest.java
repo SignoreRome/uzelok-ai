@@ -16,15 +16,13 @@ class ContractValidatorViolationsTest {
     private final ContractValidator validator = new ContractValidator();
 
     @Test
-    void validInternalVaultHasNoViolations() {
-        Path vault = new TemplateVault(root).create(root.resolve("valid"));
-
-        assertThat(validator.violations(vault)).isEmpty();
+    void validExternalVaultHasNoViolations() throws IOException {
+        assertThat(validator.violations(VaultFixture.copyVault(root))).isEmpty();
     }
 
     @Test
     void missingContractProducesSingleViolation() throws IOException {
-        Path vault = new TemplateVault(root).create(root.resolve("broken"));
+        Path vault = VaultFixture.copyVault(root);
         Files.delete(vault.resolve("40_Knowledge/_meta/CONTRACT.md"));
 
         assertThat(validator.violations(vault))

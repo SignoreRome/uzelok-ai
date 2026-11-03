@@ -462,7 +462,7 @@ uzelok-ai/
     │   └── resources/
     │       ├── application.yml
     │       ├── db/migration/V1__init.sql
-    │       ├── db/migration/V3__neutral_vault.sql
+    │       ├── db/migration/V6__neutral_vault.sql
     │       ├── prompts/extract-v1.md
     │       ├── prompts/draft-v1.md
     │       ├── prompts/draft-v2.md                # режим свободной темы (taxonomy_mode=free)
@@ -769,7 +769,7 @@ CREATE INDEX IF NOT EXISTS source_item_chat_created_idx ON source_item (chat_id,
 Первый индекс делает `ensure` по `media_group_id` идемпотентным при одновременной доставке двух фото
 альбома (победитель один, второй читает его строку), второй — обслуживает квоту «20 задач в сутки на чат».
 
-### 9.2. Миграция `V3__neutral_vault.sql` (v1.9)
+### 9.2. Миграция `V6__neutral_vault.sql` (v1.9)
 
 Нейтральная база не знает ни словаря, ни `_Inbox`, а git-колонки не использовались ни одной строкой
 кода. Миграция:

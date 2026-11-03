@@ -63,7 +63,7 @@ final class VaultFixture {
     }
 
     static VaultOptions options() {
-        return new VaultOptions(".uzelok-tmp", 0.55);
+        return new VaultOptions(0.55);
     }
 
     static ExternalObsidianStore store(String lintCommand) {
@@ -74,7 +74,7 @@ final class VaultFixture {
         return new ExternalObsidianStore(
                 options(),
                 new ContractValidator(),
-                new NameUniqueness(new GitIndex()),
+                new NameUniqueness(),
                 new FileNamePolicy(60),
                 new ContentSanitizer(),
                 new LinterRunner(lintCommand, 60),

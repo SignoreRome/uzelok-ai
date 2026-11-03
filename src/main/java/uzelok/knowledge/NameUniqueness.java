@@ -12,17 +12,10 @@ import java.util.stream.Stream;
 public final class NameUniqueness {
 
     private static final Set<String> SKIPPED_DIRECTORIES =
-            Set.of("_meta", ".obsidian", ".trash", ".uzelok-tmp");
+            Set.of("_meta", ".obsidian", ".trash");
 
-    private final GitIndex gitIndex;
-
-    public NameUniqueness(GitIndex gitIndex) {
-        this.gitIndex = gitIndex;
-    }
-
-    public Set<String> existingNames(Path knowledgeRoot, Path vaultRoot) {
+    public Set<String> existingNames(Path knowledgeRoot) {
         Path knowledge = knowledgeRoot.toAbsolutePath().normalize();
-        Path vault = vaultRoot.toAbsolutePath().normalize();
         Set<String> names = new HashSet<>();
 
         if (Files.isDirectory(knowledge)) {
@@ -35,25 +28,6 @@ public final class NameUniqueness {
                 });
             } catch (IOException ignored) {
                 // недоступные ветки дерева просто не попали в выборку
-            }
-        }
-
-        if (knowledge.startsWith(vault)) {
-            Path knowledgeRelative = vault.relativize(knowledge);
-            for (String tracked : gitIndex.trackedFiles(vault)) {
-                Path trackedPath;
-                try {
-                    trackedPath = Path.of(tracked);
-                } catch (RuntimeException exception) {
-                    continue;
-                }
-                if (!trackedPath.startsWith(knowledgeRelative)) {
-                    continue;
-                }
-                Path relative = knowledgeRelative.relativize(trackedPath);
-                if (isIncluded(relative)) {
-                    names.add(stem(relative));
-                }
             }
         }
 

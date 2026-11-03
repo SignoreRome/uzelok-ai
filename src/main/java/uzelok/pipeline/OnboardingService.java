@@ -11,6 +11,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import uzelok.domain.exception.ContractViolation;
 import uzelok.domain.model.AuditRecord;
 import uzelok.domain.model.KnowledgeBase;
@@ -72,7 +73,7 @@ public final class OnboardingService implements OnboardingHandler {
             return new OnboardingResult("base.already", List.of(existing.get().rootPath()));
         }
         Path root = vaultsRoot.resolve(tenantId.toString());
-        boolean existed = Files.isDirectory(root.resolve("40_Knowledge"));
+        boolean existed = hasContent(root);
         Path created;
         try {
             created = provisioner.create(root);
@@ -86,8 +87,8 @@ public final class OnboardingService implements OnboardingHandler {
                 UUID.randomUUID(),
                 KnowledgeBaseKind.INTERNAL_DIR,
                 created.toString(),
-                TAXONOMY_REL_PATH,
-                INBOX_REL_PATH));
+                null,
+                null));
         sessions.clear(chatId);
         audit.record(new AuditRecord(tenantId, chatId, "vault_created",
                 "knowledge_base", saved.id(), Map.of(
@@ -95,6 +96,17 @@ public final class OnboardingService implements OnboardingHandler {
                         "existed", Boolean.toString(existed))));
         String key = existed ? "base.exists" : "base.created";
         return new OnboardingResult(key, List.of(created.toString()));
+    }
+
+    private static boolean hasContent(Path directory) {
+        if (!Files.isDirectory(directory)) {
+            return false;
+        }
+        try (Stream<Path> entries = Files.list(directory)) {
+            return entries.findAny().isPresent();
+        } catch (IOException exception) {
+            return false;
+        }
     }
 
     @Override
@@ -154,9 +166,7 @@ public final class OnboardingService implements OnboardingHandler {
             return new OnboardingResult("base.connect_failed", List.of(joined));
         }
 
-        KnowledgeBaseKind kind = Files.isDirectory(canonical.resolve(".git"))
-                ? KnowledgeBaseKind.EXTERNAL_OBSIDIAN
-                : KnowledgeBaseKind.INTERNAL_DIR;
+        KnowledgeBaseKind kind = KnowledgeBaseKind.EXTERNAL_OBSIDIAN;
         KnowledgeBase saved = bases.save(tenantId, new KnowledgeBase(
                 UUID.randomUUID(),
                 kind,

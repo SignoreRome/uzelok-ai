@@ -360,6 +360,77 @@ class NoteRendererTest {
                 warning.contains("[[Missing_Note]] вырезана"));
     }
 
+    @Test
+    void rendersFreeTaxonomyIntoNotesTopicWithoutDomain() {
+        KnowledgeBase neutral = new KnowledgeBase(
+                UUID.fromString("ffffffff-ffff-ffff-ffff-ffffffffffff"),
+                KnowledgeBaseKind.INTERNAL_DIR,
+                root.toString(), null, null);
+        NoteDraft draft = draft("Exactly Once Semantics", NoteType.concept, "Kafka Streams",
+                "Гарантии доставки", "## Идея\n\nТекст.");
+
+        RenderedNote note = renderer.render(Taxonomy.free(), neutral, NOTE_ID, JOB_REF, draft,
+                false, TODAY, Set.of());
+
+        assertThat(note.inbox()).isFalse();
+        assertThat(note.relPath())
+                .isEqualTo("notes/Kafka_Streams/Exactly_Once_Semantics.md");
+        assertThat(note.frontmatter()).contains("topic: Kafka Streams");
+        assertThat(note.frontmatter()).doesNotContain("domain:");
+    }
+
+    @Test
+    void freeTaxonomyCollisionAddsSuffixWithoutInbox() {
+        KnowledgeBase neutral = new KnowledgeBase(
+                UUID.fromString("ffffffff-ffff-ffff-ffff-ffffffffffff"),
+                KnowledgeBaseKind.INTERNAL_DIR,
+                root.toString(), null, null);
+        NoteDraft draft = draft("Exactly Once", NoteType.concept, "Kafka Streams",
+                "Коллизия", "Тело");
+
+        RenderedNote note = renderer.render(Taxonomy.free(), neutral, NOTE_ID, JOB_REF, draft,
+                false, TODAY, Set.of("exactly_once"));
+
+        assertThat(note.inbox()).isFalse();
+        assertThat(note.relPath())
+                .isEqualTo("notes/Kafka_Streams/Exactly_Once_12345678.md");
+        assertThat(note.warnings()).anyMatch(warning -> warning.contains("имя занято"));
+    }
+
+    @Test
+    void freeTaxonomyIgnoresForceInboxWithWarning() {
+        KnowledgeBase neutral = new KnowledgeBase(
+                UUID.fromString("ffffffff-ffff-ffff-ffff-ffffffffffff"),
+                KnowledgeBaseKind.INTERNAL_DIR,
+                root.toString(), null, null);
+        NoteDraft draft = draft("Forced Note", NoteType.concept, "Kafka Streams",
+                "Принудительно", "Тело");
+
+        RenderedNote note = renderer.render(Taxonomy.free(), neutral, NOTE_ID, JOB_REF, draft,
+                true, TODAY, Set.of());
+
+        assertThat(note.inbox()).isFalse();
+        assertThat(note.relPath()).isEqualTo("notes/Kafka_Streams/Forced_Note.md");
+        assertThat(note.warnings()).anyMatch(warning -> warning.contains("без входящих"));
+    }
+
+    @Test
+    void freeTaxonomyKeepsProblemWithoutFieldsInNotes() {
+        KnowledgeBase neutral = new KnowledgeBase(
+                UUID.fromString("ffffffff-ffff-ffff-ffff-ffffffffffff"),
+                KnowledgeBaseKind.INTERNAL_DIR,
+                root.toString(), null, null);
+        NoteDraft draft = draft("Problem Note", NoteType.problem, "Kafka Streams",
+                "Задача", "Тело");
+
+        RenderedNote note = renderer.render(Taxonomy.free(), neutral, NOTE_ID, JOB_REF, draft,
+                false, TODAY, Set.of());
+
+        assertThat(note.inbox()).isFalse();
+        assertThat(note.relPath()).isEqualTo("notes/Kafka_Streams/Problem_Note.md");
+        assertThat(note.warnings()).anyMatch(warning -> warning.contains("problem_*"));
+    }
+
     private static NoteDraft draft(
             String title, NoteType type, String topic, String summary, String body) {
         return new NoteDraft(title, type, topic, summary, body, 0.9);

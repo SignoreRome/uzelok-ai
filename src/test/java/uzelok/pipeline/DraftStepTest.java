@@ -107,8 +107,7 @@ class DraftStepTest {
 
         @Override
         public Taxonomy taxonomy(KnowledgeBase ignored) {
-            return new Taxonomy(2, List.of(new Taxonomy.Domain("Algorithms", List.of(),
-                    List.of(new Taxonomy.Topic("Graphs", List.of())))));
+            return Taxonomy.free();
         }
     }
 }

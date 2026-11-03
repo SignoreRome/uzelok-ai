@@ -9,11 +9,12 @@ class PromptCatalogTest {
 
     @Test
     void loadsBothPromptsFromClasspath() {
-        PromptCatalog catalog = new PromptCatalog("v1");
+        PromptCatalog catalog = new PromptCatalog("v2");
 
-        assertThat(catalog.version()).isEqualTo("v1");
+        assertThat(catalog.version()).isEqualTo("v2");
         assertThat(catalog.extract()).contains("дословную транскрипцию", "unclear_spans");
-        assertThat(catalog.draft()).contains("topic", "summary", "body_md", "[[Name]]");
+        assertThat(catalog.draft()).contains("taxonomy_mode", "free", "dictionary",
+                "topic", "summary", "body_md", "[[Name]]");
     }
 
     @Test

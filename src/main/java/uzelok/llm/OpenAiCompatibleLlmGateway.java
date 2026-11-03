@@ -234,6 +234,7 @@ public final class OpenAiCompatibleLlmGateway implements LlmGateway {
     private String draftPrompt(Extraction extraction, Taxonomy taxonomy,
                                Set<String> existingNames) {
         ObjectNode root = mapper.createObjectNode();
+        root.put("taxonomy_mode", taxonomy.isFree() ? "free" : "dictionary");
         root.put("transcript", extraction.transcript());
         ArrayNode theses = root.putArray("theses");
         for (Thesis thesis : extraction.theses()) {

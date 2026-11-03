@@ -247,6 +247,33 @@ class JdbcPersistenceIT {
         assertThat(nullDetailCount).isEqualTo(1);
     }
 
+    @Test
+    void neutralVaultMigrationAllowsNullContractPathsAndDropsGitColumns() {
+        UUID tenantId = newTenant();
+        UUID knowledgeBaseId = UUID.randomUUID();
+        jdbc.update("INSERT INTO knowledge_base (id, tenant_id, kind, root_path, "
+                + "taxonomy_relpath, inbox_relpath) VALUES (?, ?, 'INTERNAL_DIR', ?, NULL, NULL)",
+                knowledgeBaseId, tenantId, "/tmp/neutral");
+
+        assertThat(jdbc.queryForObject(
+                "SELECT taxonomy_relpath FROM knowledge_base WHERE id = ?", String.class,
+                knowledgeBaseId)).isNull();
+        assertThat(jdbc.queryForObject(
+                "SELECT inbox_relpath FROM knowledge_base WHERE id = ?", String.class,
+                knowledgeBaseId)).isNull();
+        assertThat(columnExists("knowledge_base", "git_remote")).isFalse();
+        assertThat(columnExists("knowledge_base", "branch")).isFalse();
+        assertThat(columnExists("note", "git_commit_sha")).isFalse();
+    }
+
+    private boolean columnExists(String table, String column) {
+        Integer count = jdbc.queryForObject(
+                "SELECT count(*) FROM information_schema.columns "
+                        + "WHERE table_schema = ? AND table_name = ? AND column_name = ?",
+                Integer.class, SCHEMA, table, column);
+        return count != null && count > 0;
+    }
+
     private static SourceAttachment appendAfter(CountDownLatch start, JdbcAttachmentRepository repository,
                                                 SourceItem item, UUID tenantId, String fileId)
             throws InterruptedException {

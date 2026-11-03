@@ -71,7 +71,6 @@ public record UzelokProperties(
             @DefaultValue("") String lintCommand,
             @DefaultValue("60") int lintTimeoutSeconds,
             @DefaultValue("src/test/resources/lint-fixtures") String lintParityFixtures,
-            @DefaultValue(".uzelok-tmp") String tmpDir,
             @DefaultValue("0.55") double confidenceThreshold,
             @DefaultValue("60") int maxFileNameLength,
             @DefaultValue("50000000") long exportMaxBytes,

@@ -22,7 +22,7 @@
 - `PlainVaultStore` вместо `InternalDirStore`: без валидатора контракта, без линтера, без `_Inbox`;
 - `/export` для внутренней базы: zip `notes/**` + `README.md`, без валидатора;
 - промпт DRAFT v2: `taxonomy_mode` (`dictionary` для внешней базы, `free` для внутренней);
-- миграция `V3__neutral_vault.sql`: `taxonomy_relpath`/`inbox_relpath` → nullable,
+- миграция `V6__neutral_vault.sql`: `taxonomy_relpath`/`inbox_relpath` → nullable,
   колонки `git_remote`/`branch` удаляются;
 - тексты бота: «Создать в Uzelok» / «Подключить по контракту», пояснения в `/help`.
 
@@ -150,7 +150,7 @@ summary: "одно предложение до 150 символов"
 
 ### persistence и миграции
 
-- `V3__neutral_vault.sql`:
+- `V6__neutral_vault.sql`:
 
 ```sql
 ALTER TABLE knowledge_base ALTER COLUMN taxonomy_relpath DROP NOT NULL;

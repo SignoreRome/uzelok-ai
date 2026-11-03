@@ -35,15 +35,12 @@ public final class ExportArchiver implements VaultExporter {
     private static final DateTimeFormatter TIMESTAMP =
             DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss").withZone(ZoneOffset.UTC);
 
-    private final ContractValidator validator;
     private final Path exportsDir;
     private final long maxBytes;
     private final int maxFiles;
     private final Clock clock;
 
-    public ExportArchiver(ContractValidator validator, Path exportsDir, long maxBytes,
-                          int maxFiles, Clock clock) {
-        this.validator = validator;
+    public ExportArchiver(Path exportsDir, long maxBytes, int maxFiles, Clock clock) {
         this.exportsDir = exportsDir.toAbsolutePath().normalize();
         this.maxBytes = maxBytes;
         this.maxFiles = maxFiles;
@@ -55,12 +52,10 @@ public final class ExportArchiver implements VaultExporter {
         if (base.kind() != KnowledgeBaseKind.INTERNAL_DIR) {
             throw new ContractViolation("экспорт доступен только внутренней базе");
         }
-        ContractValidator.ContractReport report = validator.validate(base);
         Path root = Path.of(base.rootPath()).toAbsolutePath().normalize();
-        Path knowledgeRoot = report.knowledgeRoot().toAbsolutePath().normalize();
 
         List<String> warnings = new ArrayList<>();
-        List<FileEntry> included = collect(root, knowledgeRoot, warnings);
+        List<FileEntry> included = collect(root, warnings);
         if (included.size() > maxFiles) {
             throw new ContractViolation("в базе слишком много файлов для экспорта: "
                     + included.size() + " > " + maxFiles);
@@ -93,22 +88,22 @@ public final class ExportArchiver implements VaultExporter {
         deleteRecursively(bundle.tempDirectory());
     }
 
-    private List<FileEntry> collect(Path root, Path knowledgeRoot, List<String> warnings) {
+    private List<FileEntry> collect(Path root, List<String> warnings) {
         List<FileEntry> files = new ArrayList<>();
-        try (Stream<Path> walk = Files.walk(knowledgeRoot)) {
+        try (Stream<Path> walk = Files.walk(root)) {
             for (Path path : walk.toList()) {
-                if (path.equals(knowledgeRoot)) {
+                if (path.equals(root)) {
                     continue;
                 }
-                Path relativeToKnowledge = knowledgeRoot.relativize(path);
-                if (insideHiddenDirectory(relativeToKnowledge)) {
+                Path relativePath = root.relativize(path);
+                if (insideHiddenPath(relativePath)) {
                     continue;
                 }
                 if (Files.isSymbolicLink(path)
                         || Files.isDirectory(path, LinkOption.NOFOLLOW_LINKS)) {
                     continue;
                 }
-                String relative = root.relativize(path).toString();
+                String relative = relativePath.toString();
                 if (!Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS)) {
                     warnings.add("нерегулярный файл: " + relative);
                     continue;
@@ -144,12 +139,8 @@ public final class ExportArchiver implements VaultExporter {
         return false;
     }
 
-    private static boolean insideHiddenDirectory(Path relativeToKnowledge) {
-        Path parent = relativeToKnowledge.getParent();
-        if (parent == null) {
-            return false;
-        }
-        for (Path segment : parent) {
+    private static boolean insideHiddenPath(Path relativePath) {
+        for (Path segment : relativePath) {
             if (segment.toString().startsWith(".")) {
                 return true;
             }

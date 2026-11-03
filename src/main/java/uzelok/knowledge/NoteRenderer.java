@@ -64,35 +64,52 @@ public final class NoteRenderer {
         warnings.addAll(sanitized.warnings());
         rejectAbsolutePaths(sanitized.body());
 
-        Optional<TopicRef> resolved = taxonomy.resolve(draft.topic());
-        boolean inbox = forceInbox;
-        if (resolved.isEmpty()) {
+        boolean free = taxonomy.isFree();
+        String topicText = draft.topic() == null ? "" : draft.topic().trim();
+        boolean inbox = !free && forceInbox;
+        if (free && forceInbox) {
+            warnings.add("внутренняя база без входящих, заметка останется в notes");
+        }
+
+        Optional<TopicRef> resolved = free ? Optional.empty() : taxonomy.resolve(draft.topic());
+        if (!free && resolved.isEmpty()) {
             inbox = true;
-            String topic = draft.topic() == null ? "" : draft.topic();
-            warnings.add("тема '" + topic + "' не найдена в словаре, заметка уйдёт в _Inbox");
+            warnings.add("тема '" + topicText + "' не найдена в словаре, заметка уйдёт в _Inbox");
         }
         if (draft.confidence() < confidenceThreshold) {
             warnings.add("низкая уверенность модели (" + draft.confidence()
                     + " < " + confidenceThreshold + "), проверьте заметку");
         }
         if (draft.type() == NoteType.problem) {
-            inbox = true;
-            warnings.add("тип problem требует problem_*, которых нет в черновике");
+            if (free) {
+                warnings.add("тип problem требует problem_*, которых нет в черновике; "
+                        + "заметка останется в notes");
+            } else {
+                inbox = true;
+                warnings.add("тип problem требует problem_*, которых нет в черновике");
+            }
         }
 
         String baseName = names.fromTitle(draft.title());
         String name = baseName;
         if (existingNames.contains(baseName.toLowerCase(Locale.ROOT))) {
-            inbox = true;
             name = names.withSuffix(baseName, collisionSuffix(jobRef, noteId));
-            warnings.add("имя занято, сохраню во входящие как " + name);
+            if (free) {
+                warnings.add("имя занято, сохраню как " + name);
+            } else {
+                inbox = true;
+                warnings.add("имя занято, сохраню во входящие как " + name);
+            }
         }
 
         String body = normalizeBody(sanitized.body());
         body = resolveWikilinks(body, existingNames, warnings);
 
         String relPath;
-        if (inbox) {
+        if (free) {
+            String topicSlug = names.fromTitle(topicText.isEmpty() ? "Inbox" : topicText);
+            relPath = join(PlainVault.NOTES_DIRECTORY, topicSlug, name + ".md");
+        } else if (inbox) {
             relPath = join(base.inboxRelPath(), name + ".md");
         } else {
             TopicRef reference = resolved.orElseThrow();
@@ -100,7 +117,8 @@ public final class NoteRenderer {
                     reference.domainId(), reference.topicId(), name + ".md");
         }
 
-        String frontmatter = frontmatter(noteId, draft, resolved.orElse(null), today);
+        String frontmatter = frontmatter(noteId, draft, resolved.orElse(null), today, free,
+                topicText);
         String markdown = "---\n" + frontmatter + "\n---\n\n" + body;
         String contentHash = sha256(markdown);
 
@@ -109,10 +127,13 @@ public final class NoteRenderer {
     }
 
     private static String frontmatter(
-            UUID noteId, NoteDraft draft, TopicRef topicReference, LocalDate today) {
+            UUID noteId, NoteDraft draft, TopicRef topicReference, LocalDate today,
+            boolean free, String topicText) {
         Map<String, Object> values = new LinkedHashMap<>();
         values.put("type", draft.type().name());
-        if (topicReference != null) {
+        if (free) {
+            values.put("topic", topicText.isEmpty() ? "Inbox" : topicText);
+        } else if (topicReference != null) {
             values.put("domain", topicReference.domainId());
             values.put("topic", topicReference.topicId());
         }

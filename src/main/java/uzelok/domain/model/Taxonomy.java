@@ -29,10 +29,15 @@ public record Taxonomy(int contractVersion, List<Domain> domains) {
     }
 
     public Taxonomy {
-        if (domains == null || domains.isEmpty()) {
-            throw new IllegalArgumentException("словарь доменов не должен быть пустым");
-        }
-        domains = List.copyOf(domains);
+        domains = domains == null ? List.of() : List.copyOf(domains);
+    }
+
+    public static Taxonomy free() {
+        return new Taxonomy(0, List.of());
+    }
+
+    public boolean isFree() {
+        return domains.isEmpty();
     }
 
     public List<String> domainIds() {

@@ -55,13 +55,14 @@ class ExternalObsidianStoreTest {
     }
 
     @Test
-    void prepareSurfacesContractWarnings() throws IOException {
+    void prepareDoesNotWarnAboutGitState() throws IOException {
         Files.createDirectories(root.resolve(".git"));
         Files.writeString(root.resolve(".gitignore"), "");
         ExternalObsidianStore store = VaultFixture.store("");
         PreparedNote prepared = store.prepare(base, JOB_REF, draft("Warning Note", "Graphs"), false);
 
-        assertThat(prepared.warnings()).anyMatch(warning -> warning.contains(".uzelok-tmp"));
+        assertThat(prepared.warnings()).noneMatch(warning ->
+                warning.contains(".uzelok-tmp") || warning.contains("git"));
     }
 
     @Test

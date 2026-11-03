@@ -31,8 +31,8 @@ class LintParityTest {
         KnowledgeBase base = VaultFixture.externalBase(root);
         Taxonomy taxonomy = new TaxonomyLoader().load(
                 root.resolve(VaultFixture.TAXONOMY_REL_PATH));
-        Set<String> existingNames = new NameUniqueness(new GitIndex())
-                .existingNames(root.resolve("40_Knowledge"), root);
+        Set<String> existingNames = new NameUniqueness()
+                .existingNames(root.resolve("40_Knowledge"));
 
         RenderedNote note = new NoteRenderer(
                 new FileNamePolicy(60), new ContentSanitizer(), 0.55)
