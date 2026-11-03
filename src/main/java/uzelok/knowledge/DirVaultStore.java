@@ -34,10 +34,9 @@ import uzelok.domain.port.WrittenNote;
 
 class DirVaultStore implements KnowledgeStore {
 
-    private static final Set<String> LINT_COPY_SKIPPED =
-            Set.of(".git", ".obsidian", ".trash", ".uzelok-tmp");
+    private static final Set<String> LINT_COPY_SKIPPED = Set.of(".obsidian", ".trash");
 
-    private final VaultOptions options;
+    protected final FileNamePolicy names;
     private final ContractValidator validator;
     private final NameUniqueness uniqueness;
     private final NoteRenderer renderer;
@@ -53,13 +52,7 @@ class DirVaultStore implements KnowledgeStore {
             LinterRunner linter,
             VaultLockRegistry locks,
             Clock clock) {
-        this.options = options;
-        this.validator = validator;
-        this.uniqueness = uniqueness;
-        this.renderer = renderer;
-        this.linter = linter;
-        this.locks = locks;
-        this.clock = clock;
+        this(validator, uniqueness, null, renderer, linter, locks, clock);
     }
 
     DirVaultStore(
@@ -71,18 +64,55 @@ class DirVaultStore implements KnowledgeStore {
             LinterRunner linter,
             VaultLockRegistry locks,
             Clock clock) {
-        this(options, validator, uniqueness,
+        this(validator, uniqueness, names,
                 new NoteRenderer(names, sanitizer, options.confidenceThreshold()),
                 linter, locks, clock);
+    }
+
+    private DirVaultStore(
+            ContractValidator validator,
+            NameUniqueness uniqueness,
+            FileNamePolicy names,
+            NoteRenderer renderer,
+            LinterRunner linter,
+            VaultLockRegistry locks,
+            Clock clock) {
+        this.validator = validator;
+        this.uniqueness = uniqueness;
+        this.names = names;
+        this.renderer = renderer;
+        this.linter = linter;
+        this.locks = locks;
+        this.clock = clock;
+    }
+
+    protected record Layout(Path knowledgeRoot, Taxonomy taxonomy, List<String> warnings) {
+
+        protected Layout {
+            warnings = warnings == null ? List.of() : List.copyOf(warnings);
+        }
+    }
+
+    protected Layout layout(KnowledgeBase base) throws ContractViolation {
+        ContractValidator.ContractReport report = validator.validate(base);
+        return new Layout(report.knowledgeRoot(), report.taxonomy(), report.warnings());
+    }
+
+    protected boolean lintRequired() {
+        return true;
+    }
+
+    protected void verifyParent(KnowledgeBase base, Layout layout, Path relativeParent) {
+        verifyParentSegments(base, layout.taxonomy(), relativeParent);
     }
 
     @Override
     public PreparedNote prepare(
             KnowledgeBase base, String jobRef, NoteDraft draft, boolean forceInbox)
             throws ContractViolation {
-        ContractValidator.ContractReport report = validator.validate(base);
+        Layout layout = layout(base);
         Path root = Path.of(base.rootPath()).toAbsolutePath().normalize();
-        Set<String> existingNames = uniqueness.existingNames(report.knowledgeRoot(), root);
+        Set<String> existingNames = uniqueness.existingNames(layout.knowledgeRoot());
         UUID noteId = jobRef != null && !jobRef.isBlank()
                 ? UUID.nameUUIDFromBytes(
                         ("uzelok-note:" + jobRef).getBytes(StandardCharsets.UTF_8))
@@ -90,10 +120,10 @@ class DirVaultStore implements KnowledgeStore {
         LocalDate today = LocalDate.now(clock);
 
         RenderedNote rendered = renderer.render(
-                report.taxonomy(), base, noteId, jobRef, draft, forceInbox, today, existingNames);
-        Path target = resolveTarget(root, report.knowledgeRoot(), rendered.relPath());
+                layout.taxonomy(), base, noteId, jobRef, draft, forceInbox, today, existingNames);
+        Path target = resolveTarget(root, layout.knowledgeRoot(), rendered.relPath());
 
-        Set<String> warnings = new LinkedHashSet<>(report.warnings());
+        Set<String> warnings = new LinkedHashSet<>(layout.warnings());
         warnings.addAll(rendered.warnings());
         if (Files.isRegularFile(target) && rendered.contentHash().equals(sha256(target))) {
             warnings.add("заметка уже записана, повтор не нужен");
@@ -107,33 +137,28 @@ class DirVaultStore implements KnowledgeStore {
         return locks.withLock(base.id(), () -> writeLocked(base, note));
     }
 
-    protected boolean gitAware() {
-        return true;
-    }
-
     @Override
     public Set<String> existingNoteNames(KnowledgeBase base) throws ContractViolation {
-        ContractValidator.ContractReport report = validator.validate(base);
-        Path root = Path.of(base.rootPath()).toAbsolutePath().normalize();
-        return uniqueness.existingNames(report.knowledgeRoot(), root);
+        Layout layout = layout(base);
+        return uniqueness.existingNames(layout.knowledgeRoot());
     }
 
     @Override
     public Taxonomy taxonomy(KnowledgeBase base) throws ContractViolation {
-        return validator.validate(base).taxonomy();
+        return layout(base).taxonomy();
     }
 
     private WrittenNote writeLocked(KnowledgeBase base, PreparedNote note) {
-        ContractValidator.ContractReport report = validator.validate(base);
+        Layout layout = layout(base);
         Path root = Path.of(base.rootPath()).toAbsolutePath().normalize();
-        Path knowledgeRoot = report.knowledgeRoot().toAbsolutePath().normalize();
+        Path knowledgeRoot = layout.knowledgeRoot().toAbsolutePath().normalize();
         Path target = resolveTarget(root, knowledgeRoot, note.relPath());
         Path targetParent = target.getParent();
         if (targetParent == null) {
             throw new ContractViolation("не удалось определить каталог заметки: " + note.relPath());
         }
 
-        verifyParentSegments(base, report.taxonomy(), knowledgeRoot.relativize(targetParent));
+        verifyParent(base, layout, knowledgeRoot.relativize(targetParent));
         verifyNoSymlinks(knowledgeRoot, targetParent);
 
         if (Files.isRegularFile(target)) {
@@ -147,12 +172,11 @@ class DirVaultStore implements KnowledgeStore {
             throw new ContractViolation("файл уже существует с другим содержимым: " + note.relPath());
         }
 
-        runLint(root, knowledgeRoot, note);
-        createDirectories(targetParent, note.relPath());
-        if (gitAware()) {
-            awaitGitIndexLock(root);
+        if (lintRequired()) {
+            runLint(root, knowledgeRoot, note);
         }
-        writeAtomically(root, target, note);
+        createDirectories(targetParent, note.relPath());
+        writeAtomically(target, note);
         return new WrittenNote(note.noteId(), note.relPath(), note.contentHash(), true);
     }
 
@@ -215,10 +239,12 @@ class DirVaultStore implements KnowledgeStore {
     }
 
     private void runLint(Path root, Path knowledgeRoot, PreparedNote note) {
-        Path tmpRoot = root.resolve(options.tmpDir()).resolve("lint-" + UUID.randomUUID());
-        Path fileName = knowledgeRoot.getFileName();
-        Path stagedKnowledge = tmpRoot.resolve(fileName == null ? "knowledge" : fileName.toString());
+        Path tmpRoot = null;
         try {
+            tmpRoot = Files.createTempDirectory("uzelok-lint-");
+            Path fileName = knowledgeRoot.getFileName();
+            Path stagedKnowledge = tmpRoot.resolve(
+                    fileName == null ? "knowledge" : fileName.toString());
             Files.createDirectories(stagedKnowledge);
             copyTree(knowledgeRoot, stagedKnowledge);
             Path relative = knowledgeRoot.relativize(root.resolve(note.relPath()).normalize());
@@ -235,7 +261,9 @@ class DirVaultStore implements KnowledgeStore {
             throw new ContractViolation("не удалось подготовить временную копию для линтера: "
                     + exception.getMessage());
         } finally {
-            deleteRecursively(tmpRoot);
+            if (tmpRoot != null) {
+                deleteRecursively(tmpRoot);
+            }
         }
     }
 
@@ -287,34 +315,12 @@ class DirVaultStore implements KnowledgeStore {
         }
     }
 
-    private void awaitGitIndexLock(Path root) {
-        Path lock = root.resolve(".git").resolve("index.lock");
-        for (int attempt = 0; attempt < 5; attempt++) {
-            if (!Files.exists(lock)) {
-                return;
-            }
-            try {
-                Thread.sleep(2000);
-            } catch (InterruptedException exception) {
-                Thread.currentThread().interrupt();
-                throw new ContractViolation("ожидание git-блокировки прервано");
-            }
+    private void writeAtomically(Path target, PreparedNote note) {
+        Path parent = target.getParent();
+        if (parent == null) {
+            throw new ContractViolation("не удалось определить каталог заметки: " + note.relPath());
         }
-        if (Files.exists(lock)) {
-            throw new ContractViolation("в базе идёт git-операция (index.lock), запись отложена");
-        }
-    }
-
-    private void writeAtomically(Path root, Path target, PreparedNote note) {
-        Path tmpDirectory = root.resolve(options.tmpDir());
-        try {
-            Files.createDirectories(tmpDirectory);
-        } catch (IOException exception) {
-            throw new ContractViolation("не удалось создать каталог временных файлов: "
-                    + exception.getMessage());
-        }
-        String job8 = note.noteId() == null ? "tmp" : firstEight(note.noteId().toString());
-        Path temporary = tmpDirectory.resolve("." + note.fileName() + "." + job8 + ".tmp");
+        Path temporary = parent.resolve(".uzelok-tmp-" + UUID.randomUUID());
         try {
             Files.writeString(temporary, note.markdown(), StandardCharsets.UTF_8,
                     StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING,
@@ -338,10 +344,6 @@ class DirVaultStore implements KnowledgeStore {
                 // временный файл не останется в целевом каталоге
             }
         }
-    }
-
-    private static String firstEight(String value) {
-        return value.length() <= 8 ? value : value.substring(0, 8);
     }
 
     private static String sha256(Path file) {

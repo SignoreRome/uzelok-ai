@@ -1,13 +1,10 @@
 package uzelok.knowledge;
 
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
-import java.util.concurrent.TimeUnit;
 import uzelok.domain.exception.ContractViolation;
 import uzelok.domain.model.KnowledgeBase;
 import uzelok.domain.model.KnowledgeBaseKind;
@@ -75,16 +72,6 @@ public final class ContractValidator implements VaultInspector {
             warnings.add("нет каталога _Inbox, будет создан при записи");
         }
 
-        Path gitDirectory = root.resolve(".git");
-        if (Files.isDirectory(gitDirectory)) {
-            if (!gitignoreHasTmpDirectory(root.resolve(".gitignore"))) {
-                warnings.add("добавьте .uzelok-tmp/ в .gitignore базы");
-            }
-            if (!gitAvailable()) {
-                warnings.add("git недоступен, проверка индекса базы пропущена");
-            }
-        }
-
         return new ContractReport(knowledgeRoot, taxonomy, warnings);
     }
 
@@ -122,34 +109,4 @@ public final class ContractValidator implements VaultInspector {
         return resolved;
     }
 
-    private static boolean gitignoreHasTmpDirectory(Path gitignore) {
-        if (!Files.isRegularFile(gitignore)) {
-            return false;
-        }
-        try {
-            return Files.readAllLines(gitignore, StandardCharsets.UTF_8).stream()
-                    .map(String::trim)
-                    .anyMatch(".uzelok-tmp/"::equals);
-        } catch (IOException exception) {
-            return false;
-        }
-    }
-
-    private static boolean gitAvailable() {
-        try {
-            Process process = new ProcessBuilder("git", "--version")
-                    .redirectErrorStream(true)
-                    .start();
-            if (!process.waitFor(3, TimeUnit.SECONDS)) {
-                process.destroyForcibly();
-                return false;
-            }
-            return process.exitValue() == 0;
-        } catch (IOException exception) {
-            return false;
-        } catch (InterruptedException exception) {
-            Thread.currentThread().interrupt();
-            return false;
-        }
-    }
 }

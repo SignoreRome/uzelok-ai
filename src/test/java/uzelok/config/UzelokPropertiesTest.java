@@ -83,7 +83,6 @@ class UzelokPropertiesTest {
             assertThat(properties.knowledge().lintTimeoutSeconds()).isEqualTo(60);
             assertThat(properties.knowledge().lintParityFixtures())
                     .isEqualTo("src/test/resources/lint-fixtures");
-            assertThat(properties.knowledge().tmpDir()).isEqualTo(".uzelok-tmp");
             assertThat(properties.knowledge().confidenceThreshold()).isEqualTo(0.55);
             assertThat(properties.knowledge().maxFileNameLength()).isEqualTo(60);
             assertThat(properties.knowledge().exportMaxBytes()).isEqualTo(50_000_000L);

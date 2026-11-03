@@ -140,7 +140,8 @@ class MessageHandlerTest {
 
         assertThat(source.size()).isZero();
         assertThat(jobs.size()).isZero();
-        assertThat(telegram.lastSent().orElseThrow().text()).contains("База знаний не подключена");
+        assertThat(telegram.lastSent().orElseThrow().text())
+                .isEqualTo(new Messages().text("base.prompt"));
         assertThat(audit.actions()).contains("onboarding_required");
     }
 

@@ -118,18 +118,6 @@ class ContractValidatorTest {
         assertThat(report.warnings()).anyMatch(warning -> warning.contains("_Inbox"));
     }
 
-    @Test
-    void warnsWhenGitignoreHasNoTmpDirectory() throws IOException {
-        VaultFixture.copyVault(root);
-        Files.createDirectories(root.resolve(".git"));
-        Files.writeString(root.resolve(".gitignore"), "other/\n");
-        KnowledgeBase base = VaultFixture.externalBase(root);
-
-        ContractValidator.ContractReport report = validator.validate(base);
-
-        assertThat(report.warnings()).anyMatch(warning -> warning.contains(".uzelok-tmp/"));
-    }
-
     private static void deleteRecursively(Path directory) throws IOException {
         try (Stream<Path> walk = Files.walk(directory)) {
             walk.sorted((left, right) -> right.getNameCount() - left.getNameCount())

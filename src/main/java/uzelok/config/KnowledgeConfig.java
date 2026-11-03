@@ -12,13 +12,12 @@ import uzelok.knowledge.ContractValidator;
 import uzelok.knowledge.ExportArchiver;
 import uzelok.knowledge.ExternalObsidianStore;
 import uzelok.knowledge.FileNamePolicy;
-import uzelok.knowledge.GitIndex;
-import uzelok.knowledge.InternalDirStore;
 import uzelok.knowledge.KnowledgeStoreRouter;
 import uzelok.knowledge.LinterRunner;
 import uzelok.knowledge.NameUniqueness;
 import uzelok.knowledge.NoteRenderer;
-import uzelok.knowledge.TemplateVault;
+import uzelok.knowledge.PlainVault;
+import uzelok.knowledge.PlainVaultStore;
 import uzelok.knowledge.VaultLockRegistry;
 import uzelok.knowledge.VaultOptions;
 
@@ -32,18 +31,17 @@ public class KnowledgeConfig {
 
     @Bean
     public VaultOptions vaultOptions(UzelokProperties properties) {
-        return new VaultOptions(properties.knowledge().tmpDir(),
-                properties.knowledge().confidenceThreshold());
+        return new VaultOptions(properties.knowledge().confidenceThreshold());
     }
 
     @Bean
-    public TemplateVault templateVault(UzelokProperties properties) {
-        return new TemplateVault(Path.of(properties.storage().vaultsDir()));
+    public PlainVault plainVault(UzelokProperties properties) {
+        return new PlainVault(Path.of(properties.storage().vaultsDir()));
     }
 
     @Bean
     public NameUniqueness nameUniqueness() {
-        return new NameUniqueness(new GitIndex());
+        return new NameUniqueness();
     }
 
     @Bean
@@ -86,29 +84,28 @@ public class KnowledgeConfig {
     }
 
     @Bean
-    public InternalDirStore internalDirStore(VaultOptions options,
-                                             ContractValidator validator,
-                                             NameUniqueness uniqueness,
-                                             NoteRenderer renderer,
-                                             LinterRunner linter,
-                                             VaultLockRegistry locks,
-                                             Clock clock) {
-        return new InternalDirStore(options, validator, uniqueness, renderer,
+    public PlainVaultStore plainVaultStore(VaultOptions options,
+                                           ContractValidator validator,
+                                           NameUniqueness uniqueness,
+                                           FileNamePolicy names,
+                                           ContentSanitizer sanitizer,
+                                           LinterRunner linter,
+                                           VaultLockRegistry locks,
+                                           Clock clock) {
+        return new PlainVaultStore(options, validator, uniqueness, names, sanitizer,
                 linter, locks, clock);
     }
 
     @Bean
     @Primary
     public KnowledgeStore knowledgeStore(ExternalObsidianStore external,
-                                         InternalDirStore internal) {
+                                         PlainVaultStore internal) {
         return new KnowledgeStoreRouter(external, internal);
     }
 
     @Bean
-    public VaultExporter vaultExporter(ContractValidator validator,
-                                       UzelokProperties properties,
-                                       Clock clock) {
-        return new ExportArchiver(validator,
+    public VaultExporter vaultExporter(UzelokProperties properties, Clock clock) {
+        return new ExportArchiver(
                 Path.of(properties.storage().exportsDir()),
                 properties.knowledge().exportMaxBytes(),
                 properties.knowledge().exportMaxFiles(),

@@ -2,7 +2,13 @@ package uzelok.telegram;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.net.URISyntaxException;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.util.stream.Stream;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
@@ -16,7 +22,7 @@ import uzelok.domain.model.ActionOutcome;
 import uzelok.domain.model.ChatAccess;
 import uzelok.domain.model.KnowledgeBaseKind;
 import uzelok.knowledge.ContractValidator;
-import uzelok.knowledge.TemplateVault;
+import uzelok.knowledge.PlainVault;
 import uzelok.pipeline.OnboardingService;
 import uzelok.pipeline.StatsService;
 import uzelok.support.InMemoryAccessRepository;
@@ -56,7 +62,7 @@ class OnboardingFlowTest {
     private Path externalVault;
 
     @BeforeEach
-    void setUp() {
+    void setUp() throws IOException {
         InMemoryAttachmentRepository attachments = new InMemoryAttachmentRepository();
         jobs = new InMemoryJobRepository(source = new InMemorySourceItemRepository());
         telegram = new InMemoryTelegramGateway();
@@ -72,7 +78,7 @@ class OnboardingFlowTest {
         UzelokProperties.Limits limits = new UzelokProperties.Limits(20, 5, 72);
 
         OnboardingService onboarding = new OnboardingService(bases, sessions,
-                new TemplateVault(root.resolve("vaults")), new ContractValidator(), audit, clock,
+                new PlainVault(root.resolve("vaults")), new ContractValidator(), audit, clock,
                 root.resolve("vaults"));
         CommandHandler commands = new CommandHandler(telegram, messages, "test_bot", Map.of(),
                 access, jobs, new StatsService(new InMemoryNoteRepository(), jobs,
@@ -87,7 +93,7 @@ class OnboardingFlowTest {
         handler = new MessageHandler(access, bases, source, attachments, jobs, audit, telegram,
                 commands, receiver, clock, limits, telegramProps, messages, onboarding);
 
-        externalVault = new TemplateVault(root).create(root.resolve("external"));
+        externalVault = copyVault(root.resolve("external"));
     }
 
     @Test
@@ -141,11 +147,37 @@ class OnboardingFlowTest {
         assertThat(telegram.lastSent().orElseThrow().text())
                 .contains("База подключена");
         assertThat(bases.findByTenantId(TENANT_ID).orElseThrow().kind())
-                .isEqualTo(KnowledgeBaseKind.INTERNAL_DIR);
+                .isEqualTo(KnowledgeBaseKind.EXTERNAL_OBSIDIAN);
 
         handler.handle(TelegramUpdates.text(3, CHAT_ID, 502, FROM_ID, "конспект"));
 
         assertThat(source.size()).isEqualTo(1);
         assertThat(jobs.size()).isEqualTo(1);
+    }
+
+    private static Path copyVault(Path target) throws IOException {
+        Path source;
+        try {
+            source = Path.of(OnboardingFlowTest.class.getResource("/vault-fixture").toURI());
+        } catch (URISyntaxException exception) {
+            throw new IllegalStateException("фикстура vault-fixture недоступна", exception);
+        }
+        try (Stream<Path> walk = Files.walk(source)) {
+            walk.forEach(path -> {
+                Path destination = target.resolve(source.relativize(path).toString());
+                try {
+                    if (Files.isDirectory(path)) {
+                        Files.createDirectories(destination);
+                    } else {
+                        Files.copy(path, destination, StandardCopyOption.REPLACE_EXISTING);
+                    }
+                } catch (IOException exception) {
+                    throw new UncheckedIOException(exception);
+                }
+            });
+        } catch (UncheckedIOException exception) {
+            throw exception.getCause();
+        }
+        return target;
     }
 }

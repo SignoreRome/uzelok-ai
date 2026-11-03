@@ -178,7 +178,7 @@ class OpenAiCompatibleLlmGatewayTest {
     @Test
     void cachedFallbackResponseIsReusedWithoutNetwork() {
         String hash = "cached-fallback-hash";
-        String requestKey = LlmRequestKey.of("EXTRACT", hash, "fallback", "v1", 0);
+        String requestKey = LlmRequestKey.of("EXTRACT", tenantId, hash, "fallback", "v1", 0, "");
         calls.record(new LlmCallRecord(tenantId, jobId, "EXTRACT", "provider", "fallback", "v1",
                 requestKey, 12, 7, new BigDecimal("0.000100"), 1, true,
                 extractionJson("из кэша fallback")));
@@ -192,7 +192,7 @@ class OpenAiCompatibleLlmGatewayTest {
     @Test
     void cachedResponseIsReturnedBeforeBudgetCheck() {
         String hash = "cached-budget-hash";
-        String requestKey = LlmRequestKey.of("EXTRACT", hash, "main", "v1", 0);
+        String requestKey = LlmRequestKey.of("EXTRACT", tenantId, hash, "main", "v1", 0, "");
         calls.recordAt(new LlmCallRecord(tenantId, jobId, "EXTRACT", "provider", "main", "v1",
                 requestKey, 12, 7, new BigDecimal("2.00"), 1, true,
                 extractionJson("уже оплаченный ответ")), now.minusSeconds(60));

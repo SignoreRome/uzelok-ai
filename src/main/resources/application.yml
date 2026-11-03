@@ -53,15 +53,15 @@ uzelok:
       "[opencode-go/claude-haiku-5-5]":
         input-per-million: 0.10
         output-per-million: 0.50
-    prompt-version: v1
+    prompt-version: v2
     daily-budget-usd: 2.00
     timeout-seconds: 120
     proxy-url: ${UZELOK_LLM_PROXY:}
   knowledge:
+    # Линтер запускается только для внешней базы с контрактом.
     lint-command: ""
     lint-timeout-seconds: 60
     lint-parity-fixtures: src/test/resources/lint-fixtures
-    tmp-dir: .uzelok-tmp
     confidence-threshold: 0.55
     max-file-name-length: 60
     export-max-bytes: 50000000
