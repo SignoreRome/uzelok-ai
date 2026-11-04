@@ -47,12 +47,15 @@ uzelok:
       "[opencode-go/deepseek-v4.1-flash]":
         input-per-million: 0.30
         output-per-million: 1.20
+        cache-read-per-million: 0.003
       "[opencode-go/gemini-4-argon]":
         input-per-million: 2.00
         output-per-million: 10.00
+        cache-read-per-million: 0.10
       "[opencode-go/claude-haiku-5-5]":
         input-per-million: 0.10
         output-per-million: 0.50
+        cache-read-per-million: 0.01
     prompt-version: v2
     daily-budget-usd: 2.00
     timeout-seconds: 120

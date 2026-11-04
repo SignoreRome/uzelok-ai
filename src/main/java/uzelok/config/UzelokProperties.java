@@ -64,7 +64,8 @@ public record UzelokProperties(
 
     public record Pricing(
             @DefaultValue("0") BigDecimal inputPerMillion,
-            @DefaultValue("0") BigDecimal outputPerMillion) {
+            @DefaultValue("0") BigDecimal outputPerMillion,
+            @DefaultValue("0") BigDecimal cacheReadPerMillion) {
     }
 
     public record Knowledge(

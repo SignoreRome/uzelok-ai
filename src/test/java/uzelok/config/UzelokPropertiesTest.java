@@ -25,7 +25,8 @@ class UzelokPropertiesTest {
                     "uzelok.llm.steps.draft.provider=opencode-go",
                     "uzelok.llm.steps.draft.model=draft-model",
                     "uzelok.llm.pricing.[opencode-go/draft-model].input-per-million=0.30",
-                    "uzelok.llm.pricing.[opencode-go/draft-model].output-per-million=1.20");
+                    "uzelok.llm.pricing.[opencode-go/draft-model].output-per-million=1.20",
+                    "uzelok.llm.pricing.[opencode-go/draft-model].cache-read-per-million=0.01");
 
     @Test
     void bindsEveryConfigurationSection() {
@@ -73,6 +74,8 @@ class UzelokPropertiesTest {
                     .isEqualByComparingTo(new BigDecimal("0.30"));
             assertThat(properties.llm().pricing().get("opencode-go/draft-model").outputPerMillion())
                     .isEqualByComparingTo(new BigDecimal("1.20"));
+            assertThat(properties.llm().pricing().get("opencode-go/draft-model")
+                    .cacheReadPerMillion()).isEqualByComparingTo(new BigDecimal("0.01"));
             assertThat(properties.llm().promptVersion()).isEqualTo("v1");
             assertThat(properties.llm().dailyBudgetUsd())
                     .isEqualByComparingTo(new BigDecimal("2.00"));

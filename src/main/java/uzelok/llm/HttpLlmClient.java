@@ -33,7 +33,14 @@ public final class HttpLlmClient {
     private static final int MAX_TOKENS = 8192;
     private static final String USER_AGENT = "uzelok/0.1";
 
-    public record LlmHttpResponse(String content, int inputTokens, int outputTokens, int latencyMs) {
+    public record LlmHttpResponse(
+            String content,
+            int inputTokens,
+            int outputTokens,
+            int latencyMs,
+            int cacheReadTokens,
+            int cacheWriteTokens,
+            int reasoningTokens) {
     }
 
     private final OkHttpClient client;
@@ -127,11 +134,16 @@ public final class HttpLlmClient {
             throw new LlmContractViolation("в ответе LLM нет содержимого");
         }
         JsonNode usage = root.path("usage");
+        JsonNode promptDetails = usage.path("prompt_tokens_details");
+        JsonNode completionDetails = usage.path("completion_tokens_details");
         return new LlmHttpResponse(
                 contentNode.asString(),
                 usage.path("prompt_tokens").asInt(0),
                 usage.path("completion_tokens").asInt(0),
-                latencyMs);
+                latencyMs,
+                promptDetails.path("cached_tokens").asInt(0),
+                promptDetails.path("cache_write_tokens").asInt(0),
+                completionDetails.path("reasoning_tokens").asInt(0));
     }
 
     private String requestBody(String model, String systemPrompt, String userPrompt,

@@ -103,8 +103,9 @@ class CommandHandlerTest {
         ProcessingJob job = jobs.createIfAbsent(new ProcessingJob(UUID.randomUUID(), TENANT_ID,
                 source.all().getFirst().id(), UUID.randomUUID(), JobStatus.RECEIVED, null, 0,
                 NOW, null, null, null, null, null, NOW, NOW, 0, false)).job();
-        calls.recordAt(new LlmCallRecord(TENANT_ID, job.id(), "EXTRACT", "p", "m", "v1",
-                "key", 1, 1, new BigDecimal("0.25"), 10, true, "{}"), NOW);
+        calls.recordAt(new LlmCallRecord(TENANT_ID, job.id(), "EXTRACT", "p", "m", "m",
+                "uzelok.EXTRACT", null, "v1", "key", 1, 1, 0, 0, 0,
+                new BigDecimal("0.25"), 10, true, "{}"), NOW);
 
         handler.handle(CHAT_ID, "/stats");
 

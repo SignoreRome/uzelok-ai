@@ -70,11 +70,14 @@ class OpenAiCompatibleLlmGatewayTest {
                         "draft", new UzelokProperties.Step("provider", "draft", null)),
                 Map.of(
                         "provider/main", new UzelokProperties.Pricing(
-                                new BigDecimal("1.00"), new BigDecimal("2.00")),
+                                new BigDecimal("1.00"), new BigDecimal("2.00"),
+                                new BigDecimal("0.10")),
                         "provider/fallback", new UzelokProperties.Pricing(
-                                new BigDecimal("3.00"), new BigDecimal("4.00")),
+                                new BigDecimal("3.00"), new BigDecimal("4.00"),
+                                new BigDecimal("0.30")),
                         "provider/draft", new UzelokProperties.Pricing(
-                                new BigDecimal("0.10"), new BigDecimal("0.20"))),
+                                new BigDecimal("0.10"), new BigDecimal("0.20"),
+                                new BigDecimal("0.01"))),
                 "v1",
                 new BigDecimal("2.00"),
                 10,
@@ -107,10 +110,16 @@ class OpenAiCompatibleLlmGatewayTest {
         assertThat(calls.successes()).hasSize(1);
         LlmCallRecord call = calls.successes().getFirst();
         assertThat(call.provider()).isEqualTo("provider");
+        assertThat(call.requestedModel()).isEqualTo("main");
         assertThat(call.model()).isEqualTo("main");
+        assertThat(call.slot()).isEqualTo("uzelok.extract");
+        assertThat(call.fallbackReason()).isNull();
         assertThat(call.step()).isEqualTo("EXTRACT");
         assertThat(call.inputTokens()).isEqualTo(12);
         assertThat(call.outputTokens()).isEqualTo(7);
+        assertThat(call.cacheReadTokens()).isZero();
+        assertThat(call.cacheWriteTokens()).isZero();
+        assertThat(call.reasoningTokens()).isZero();
         assertThat(call.costUsd()).isEqualByComparingTo(new BigDecimal("0.000026"));
         assertThat(call.responseText()).contains("распознанный текст");
     }
@@ -147,13 +156,17 @@ class OpenAiCompatibleLlmGatewayTest {
         assertThat(extraction.transcript()).isEqualTo("материал");
         assertThat(serverCalls).hasValue(2);
         assertThat(calls.successes()).hasSize(1);
-        assertThat(calls.successes().getFirst().model()).isEqualTo("fallback");
+        LlmCallRecord call = calls.successes().getFirst();
+        assertThat(call.requestedModel()).isEqualTo("main");
+        assertThat(call.model()).isEqualTo("fallback");
+        assertThat(call.fallbackReason()).isEqualTo("HTTP_5XX");
     }
 
     @Test
     void exhaustedBudgetStopsBeforeNetwork() {
-        calls.recordAt(new LlmCallRecord(tenantId, jobId, "EXTRACT", "provider", "main", "v1",
-                "old-key", 1, 1, new BigDecimal("2.00"), 1, true, "{}"), now.minusSeconds(60));
+        calls.recordAt(new LlmCallRecord(tenantId, jobId, "EXTRACT", "provider", "main", "main",
+                "uzelok.extract", null, "v1", "old-key", 1, 1, 0, 0, 0,
+                new BigDecimal("2.00"), 1, true, "{}"), now.minusSeconds(60));
 
         assertThatThrownBy(() -> gateway.extract(context("budget-hash", 0), List.of(), "материал"))
                 .isInstanceOf(QuotaExceeded.class);
@@ -171,16 +184,59 @@ class OpenAiCompatibleLlmGatewayTest {
                 .isInstanceOf(LlmContractViolation.class);
 
         assertThat(calls.all()).hasSize(1);
-        assertThat(calls.all().getFirst().success()).isFalse();
-        assertThat(calls.all().getFirst().costUsd()).isEqualByComparingTo(BigDecimal.ZERO);
+        LlmCallRecord failed = calls.all().getFirst();
+        assertThat(failed.success()).isFalse();
+        assertThat(failed.requestedModel()).isEqualTo("main");
+        assertThat(failed.model()).isEqualTo("main");
+        assertThat(failed.slot()).isEqualTo("uzelok.extract");
+        assertThat(failed.costUsd()).isPositive();
+        assertThat(failed.costUsd()).isEqualByComparingTo(new BigDecimal("0.000011"));
+    }
+
+    @Test
+    void cacheTokensAreRecordedAndMakeCallCheaper() throws IOException {
+        server.stop(0);
+        server = startServer(success(extractionJson("с кешем"), 1000, 0, 800, 0, 30));
+        gateway = gatewayWith(properties);
+
+        gateway.extract(context("cache-hash", 0), List.of(), "материал");
+        LlmCallRecord cached = calls.successes().getFirst();
+        assertThat(cached.cacheReadTokens()).isEqualTo(800);
+        assertThat(cached.reasoningTokens()).isEqualTo(30);
+        BigDecimal cachedCost = cached.costUsd();
+
+        server.stop(0);
+        server = startServer(success(extractionJson("без кеша"), 1000, 0, 0, 0, 0));
+        gateway = gatewayWith(properties);
+
+        gateway.extract(context("uncached-hash", 0), List.of(), "материал");
+        BigDecimal uncachedCost = calls.successes().getLast().costUsd();
+
+        assertThat(cachedCost).isEqualByComparingTo(new BigDecimal("0.000280"));
+        assertThat(cachedCost).isLessThan(uncachedCost);
+    }
+
+    @Test
+    void cacheReadAbovePromptDoesNotProduceNegativeCost() throws IOException {
+        server.stop(0);
+        server = startServer(success(extractionJson("странный провайдер"), 100, 10, 800, 0, 0));
+        gateway = gatewayWith(properties);
+
+        gateway.extract(context("negative-hash", 0), List.of(), "материал");
+
+        LlmCallRecord call = calls.successes().getFirst();
+        assertThat(call.cacheReadTokens()).isEqualTo(800);
+        assertThat(call.costUsd()).isNotNegative();
+        assertThat(call.costUsd()).isEqualByComparingTo(new BigDecimal("0.000100"));
     }
 
     @Test
     void cachedFallbackResponseIsReusedWithoutNetwork() {
         String hash = "cached-fallback-hash";
         String requestKey = LlmRequestKey.of("EXTRACT", tenantId, hash, "fallback", "v1", 0, "");
-        calls.record(new LlmCallRecord(tenantId, jobId, "EXTRACT", "provider", "fallback", "v1",
-                requestKey, 12, 7, new BigDecimal("0.000100"), 1, true,
+        calls.record(new LlmCallRecord(tenantId, jobId, "EXTRACT", "provider", "main", "fallback",
+                "uzelok.extract", "HTTP_5XX", "v1", requestKey, 12, 7, 0, 0, 0,
+                new BigDecimal("0.000100"), 1, true,
                 extractionJson("из кэша fallback")));
 
         Extraction extraction = gateway.extract(context(hash, 0), List.of(), "материал");
@@ -193,8 +249,9 @@ class OpenAiCompatibleLlmGatewayTest {
     void cachedResponseIsReturnedBeforeBudgetCheck() {
         String hash = "cached-budget-hash";
         String requestKey = LlmRequestKey.of("EXTRACT", tenantId, hash, "main", "v1", 0, "");
-        calls.recordAt(new LlmCallRecord(tenantId, jobId, "EXTRACT", "provider", "main", "v1",
-                requestKey, 12, 7, new BigDecimal("2.00"), 1, true,
+        calls.recordAt(new LlmCallRecord(tenantId, jobId, "EXTRACT", "provider", "main", "main",
+                "uzelok.extract", null, "v1", requestKey, 12, 7, 0, 0, 0,
+                new BigDecimal("2.00"), 1, true,
                 extractionJson("уже оплаченный ответ")), now.minusSeconds(60));
 
         Extraction extraction = gateway.extract(context(hash, 0), List.of(), "материал");
@@ -328,12 +385,25 @@ class OpenAiCompatibleLlmGatewayTest {
     }
 
     private static String success(String content, int promptTokens, int completionTokens) {
+        return success(content, promptTokens, completionTokens, 0, 0, 0);
+    }
+
+    private static String success(String content, int promptTokens, int completionTokens,
+                                  int cachedTokens, int cacheWriteTokens, int reasoningTokens) {
         return """
                 {
                   "choices": [{"message": {"content": %s}}],
-                  "usage": {"prompt_tokens": %d, "completion_tokens": %d}
+                  "usage": {
+                    "prompt_tokens": %d,
+                    "completion_tokens": %d,
+                    "prompt_tokens_details": {
+                      "cached_tokens": %d,
+                      "cache_write_tokens": %d
+                    },
+                    "completion_tokens_details": {"reasoning_tokens": %d}
+                  }
                 }
                 """.formatted(JsonMapper.builder().build().writeValueAsString(content),
-                promptTokens, completionTokens);
+                promptTokens, completionTokens, cachedTokens, cacheWriteTokens, reasoningTokens);
     }
 }
