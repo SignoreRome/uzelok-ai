@@ -15,7 +15,10 @@ mkdir -p "$(dirname "$tarball")"
 
 "$repo_root/gradlew" -p "$repo_root" bootJar
 podman build -t "$image" "$repo_root"
-podman save -o "$tarball" "$image"
+# kubelet в k3s резолвит имя без реестра в docker.io/library/<name>:<tag>;
+# без этого тега образ остаётся локальным и под висит в ErrImagePull.
+podman tag "$image" "docker.io/library/$image"
+podman save -o "$tarball" "docker.io/library/$image"
 sudo k3s ctr images import "$tarball"
 
 kubectl create configmap uzelok-lint -n uzelok \
