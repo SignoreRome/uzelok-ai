@@ -123,9 +123,16 @@ public final class OpenAiCompatibleLlmGateway implements LlmGateway {
                        String schemaName, String jsonSchema, String variant,
                        Function<String, T> parser) {
         LlmCallFailed lastFailure = null;
+        String lastReason = null;
+        String lastFallbackReason = null;
         String lastModel = route.models().getFirst();
         String lastRequestKey = requestKey(step, context, lastModel, variant);
-        for (String model : route.models()) {
+        String requestedModel = route.models().getFirst();
+        String slot = "uzelok." + step.toLowerCase(java.util.Locale.ROOT);
+        for (int index = 0; index < route.models().size(); index++) {
+            String model = route.models().get(index);
+            String fallbackReason = index == 0 ? null : lastReason;
+            lastFallbackReason = fallbackReason;
             lastModel = model;
             String requestKey = requestKey(step, context, model, variant);
             lastRequestKey = requestKey;
@@ -136,6 +143,7 @@ public final class OpenAiCompatibleLlmGateway implements LlmGateway {
                         "uzelok-" + context.jobId());
             } catch (LlmCallFailed failure) {
                 lastFailure = failure;
+                lastReason = failureReason(failure);
                 continue;
             }
 
@@ -143,22 +151,31 @@ public final class OpenAiCompatibleLlmGateway implements LlmGateway {
             try {
                 parsed = parser.apply(response.content());
             } catch (LlmContractViolation violation) {
-                recordFailure(context, step, route, model, requestKey, response.inputTokens(),
-                        response.outputTokens(), response.latencyMs(), response.content());
+                recordFailure(context, step, route, requestedModel, model, slot, fallbackReason,
+                        requestKey, response.inputTokens(), response.outputTokens(),
+                        response.cacheReadTokens(), response.cacheWriteTokens(),
+                        response.reasoningTokens(), response.latencyMs(), response.content());
                 throw violation;
             }
             BigDecimal cost = cost(route.provider(), model, response.inputTokens(),
-                    response.outputTokens());
+                    response.outputTokens(), response.cacheReadTokens(),
+                    response.cacheWriteTokens());
             calls.record(new LlmCallRecord(
                     context.tenantId(),
                     context.jobId(),
                     step,
                     route.provider(),
+                    requestedModel,
                     model,
+                    slot,
+                    fallbackReason,
                     prompts.version(),
                     requestKey,
                     response.inputTokens(),
                     response.outputTokens(),
+                    response.cacheReadTokens(),
+                    response.cacheWriteTokens(),
+                    response.reasoningTokens(),
                     cost,
                     response.latencyMs(),
                     true,
@@ -169,7 +186,8 @@ public final class OpenAiCompatibleLlmGateway implements LlmGateway {
             return parsed;
         }
 
-        recordFailure(context, step, route, lastModel, lastRequestKey, 0, 0, 0, null);
+        recordFailure(context, step, route, requestedModel, lastModel, slot, lastFallbackReason,
+                lastRequestKey, 0, 0, 0, 0, 0, 0, null);
         throw lastFailure == null ? new LlmCallFailed("LLM не вернул ответ") : lastFailure;
     }
 
@@ -177,23 +195,47 @@ public final class OpenAiCompatibleLlmGateway implements LlmGateway {
      * {@code responseText} сохраняем и при провале контракта: без сырого ответа модель невозможно
      * обвинить или оправдать, а в лог его писать нельзя (там материал пользователя).
      */
-    private void recordFailure(LlmContext context, String step, LlmRouter.Route route, String model,
-                               String requestKey, int inputTokens, int outputTokens, int latencyMs,
-                               String responseText) {
+    private void recordFailure(LlmContext context, String step, LlmRouter.Route route,
+                               String requestedModel, String model, String slot,
+                               String fallbackReason, String requestKey, int inputTokens,
+                               int outputTokens, int cacheReadTokens, int cacheWriteTokens,
+                               int reasoningTokens, int latencyMs, String responseText) {
         calls.record(new LlmCallRecord(
                 context.tenantId(),
                 context.jobId(),
                 step,
                 route.provider(),
+                requestedModel,
                 model,
+                slot,
+                fallbackReason,
                 prompts.version(),
                 requestKey,
                 inputTokens,
                 outputTokens,
-                BigDecimal.ZERO.setScale(6, RoundingMode.HALF_UP),
+                cacheReadTokens,
+                cacheWriteTokens,
+                reasoningTokens,
+                cost(route.provider(), model, inputTokens, outputTokens, cacheReadTokens,
+                        cacheWriteTokens),
                 latencyMs,
                 false,
                 responseText));
+    }
+
+    private static String failureReason(LlmCallFailed failure) {
+        String message = failure.getMessage() == null ? "" : failure.getMessage();
+        if (message.contains("HTTP 429")) {
+            return "HTTP_429";
+        }
+        if (message.matches(".*HTTP 5\\d\\d.*")) {
+            return "HTTP_5XX";
+        }
+        if (message.contains("сеть") || message.toLowerCase(java.util.Locale.ROOT).contains("timeout")
+                || message.toLowerCase(java.util.Locale.ROOT).contains("таймаут")) {
+            return "TIMEOUT";
+        }
+        return "TRANSPORT";
     }
 
     private void checkBudget(java.util.UUID tenantId) {
@@ -205,7 +247,8 @@ public final class OpenAiCompatibleLlmGateway implements LlmGateway {
         }
     }
 
-    private BigDecimal cost(String provider, String model, int inputTokens, int outputTokens) {
+    private BigDecimal cost(String provider, String model, int inputTokens, int outputTokens,
+                            int cacheReadTokens, int cacheWriteTokens) {
         String key = provider + "/" + model;
         UzelokProperties.Pricing pricing = properties.pricing().get(key);
         if (pricing == null) {
@@ -214,13 +257,18 @@ public final class OpenAiCompatibleLlmGateway implements LlmGateway {
             }
             return null;
         }
-        BigDecimal input = BigDecimal.valueOf(inputTokens).divide(MILLION, 12, RoundingMode.HALF_UP)
-                .multiply(pricing.inputPerMillion() == null
-                        ? BigDecimal.ZERO : pricing.inputPerMillion());
-        BigDecimal output = BigDecimal.valueOf(outputTokens).divide(MILLION, 12, RoundingMode.HALF_UP)
-                .multiply(pricing.outputPerMillion() == null
-                        ? BigDecimal.ZERO : pricing.outputPerMillion());
-        return input.add(output).setScale(6, RoundingMode.HALF_UP);
+        int uncachedInput = Math.max(0, inputTokens - cacheReadTokens - cacheWriteTokens);
+        BigDecimal input = price(uncachedInput, pricing.inputPerMillion());
+        BigDecimal cacheRead = price(cacheReadTokens, pricing.cacheReadPerMillion());
+        BigDecimal cacheWrite = price(cacheWriteTokens, pricing.inputPerMillion());
+        BigDecimal output = price(outputTokens, pricing.outputPerMillion());
+        return input.add(cacheRead).add(cacheWrite).add(output).setScale(6, RoundingMode.HALF_UP);
+    }
+
+    private static BigDecimal price(int tokens, BigDecimal perMillion) {
+        return BigDecimal.valueOf(Math.max(0, tokens))
+                .divide(MILLION, 12, RoundingMode.HALF_UP)
+                .multiply(perMillion == null ? BigDecimal.ZERO : perMillion);
     }
 
     private String requestKey(String step, LlmContext context, String model, String variant) {

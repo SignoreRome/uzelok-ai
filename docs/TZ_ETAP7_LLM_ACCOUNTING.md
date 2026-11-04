@@ -90,7 +90,7 @@ CREATE INDEX IF NOT EXISTS llm_call_slot_created_idx ON llm_call (slot, created_
 
 - `requested_model` = первая модель маршрута; `model` = фактически ответившая;
 - `slot` = `uzelok.<step>`;
-- `fallback_reason` = `NULL`, если модель первая; иначе причина (`HTTP_429`, `HTTP_5XX`, `TIMEOUT`, `SCHEMA_INVALID`);
+- `fallback_reason` = `NULL`, если модель первая; иначе причина (`HTTP_429`, `HTTP_5XX`, `TIMEOUT`, `TRANSPORT`, `SCHEMA_INVALID`);
 - `cost()` учитывает кеш и считает `max(0, …)`; та же функция используется в `recordFailure`.
 
 ### 4.4. Таблица цен

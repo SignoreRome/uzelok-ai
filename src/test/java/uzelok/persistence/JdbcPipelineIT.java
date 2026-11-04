@@ -154,12 +154,14 @@ class JdbcPipelineIT {
         UUID tenantId = newTenant();
         UUID jobId = newJob(tenantId, newKnowledgeBase(tenantId), "EXTRACTING");
         JdbcLlmCallRepository repository = new JdbcLlmCallRepository(named);
-        LlmCallRecord call = new LlmCallRecord(tenantId, jobId, "EXTRACT", "p", "m", "v1",
-                "key-1", 10, 20, new BigDecimal("0.001500"), 100, true, "{\"ok\":true}");
+        LlmCallRecord call = new LlmCallRecord(tenantId, jobId, "EXTRACT", "p", "m", "m",
+                "uzelok.EXTRACT", null, "v1", "key-1", 10, 20, 0, 0, 0,
+                new BigDecimal("0.001500"), 100, true, "{\"ok\":true}");
 
         repository.record(call);
-        repository.record(new LlmCallRecord(tenantId, jobId, "EXTRACT", "p", "m", "v1",
-                "key-1", 1, 1, new BigDecimal("9.000000"), 1, false, null));
+        repository.record(new LlmCallRecord(tenantId, jobId, "EXTRACT", "p", "m", "m",
+                "uzelok.EXTRACT", null, "v1", "key-1", 1, 1, 0, 0, 0,
+                new BigDecimal("9.000000"), 1, false, null));
 
         assertThat(repository.findSuccessfulResponse("key-1")).contains("{\"ok\":true}");
         assertThat(repository.spentSince(tenantId, Instant.now().minusSeconds(60)))
@@ -174,11 +176,13 @@ class JdbcPipelineIT {
         UUID jobId = newJob(tenantId, newKnowledgeBase(tenantId), "EXTRACTING");
         JdbcLlmCallRepository repository = new JdbcLlmCallRepository(named);
         String requestKey = "retry-key";
-        repository.record(new LlmCallRecord(tenantId, jobId, "EXTRACT", "p", "m", "v1",
-                requestKey, 0, 0, BigDecimal.ZERO, 10, false, null));
+        repository.record(new LlmCallRecord(tenantId, jobId, "EXTRACT", "p", "m", "m",
+                "uzelok.EXTRACT", null, "v1", requestKey, 0, 0, 0, 0, 0,
+                BigDecimal.ZERO, 10, false, null));
 
-        repository.record(new LlmCallRecord(tenantId, jobId, "EXTRACT", "p", "m", "v1",
-                requestKey, 10, 20, new BigDecimal("0.001500"), 100, true, "{\"ok\":true}"));
+        repository.record(new LlmCallRecord(tenantId, jobId, "EXTRACT", "p", "m", "m",
+                "uzelok.EXTRACT", null, "v1", requestKey, 10, 20, 0, 0, 0,
+                new BigDecimal("0.001500"), 100, true, "{\"ok\":true}"));
 
         assertThat(repository.findSuccessfulResponse(requestKey)).contains("{\"ok\":true}");
         assertThat(repository.spentSince(tenantId, Instant.now().minusSeconds(60)))

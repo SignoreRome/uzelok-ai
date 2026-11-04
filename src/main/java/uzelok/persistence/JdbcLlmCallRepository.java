@@ -26,18 +26,26 @@ public class JdbcLlmCallRepository implements LlmCallRepository {
             """;
 
     private static final String INSERT_CALL = """
-            INSERT INTO llm_call (tenant_id, job_id, step, provider, model, prompt_version,
-                                  request_key, input_tokens, output_tokens, cost_usd, latency_ms,
-                                  status, response_text)
-            VALUES (:tenantId, :jobId, :step, :provider, :model, :promptVersion,
-                    :requestKey, :inputTokens, :outputTokens, :costUsd, :latencyMs,
-                    :status, :responseText)
+            INSERT INTO llm_call (tenant_id, job_id, step, provider, model, requested_model,
+                                  slot, fallback_reason, prompt_version, request_key, input_tokens,
+                                  output_tokens, cache_read_tokens, cache_write_tokens,
+                                  reasoning_tokens, cost_usd, latency_ms, status, response_text)
+            VALUES (:tenantId, :jobId, :step, :provider, :model, :requestedModel,
+                    :slot, :fallbackReason, :promptVersion, :requestKey, :inputTokens,
+                    :outputTokens, :cacheReadTokens, :cacheWriteTokens,
+                    :reasoningTokens, :costUsd, :latencyMs, :status, :responseText)
             ON CONFLICT (request_key) DO UPDATE SET
                 status = EXCLUDED.status,
                 model = EXCLUDED.model,
                 provider = EXCLUDED.provider,
+                requested_model = EXCLUDED.requested_model,
+                slot = EXCLUDED.slot,
+                fallback_reason = EXCLUDED.fallback_reason,
                 input_tokens = EXCLUDED.input_tokens,
                 output_tokens = EXCLUDED.output_tokens,
+                cache_read_tokens = EXCLUDED.cache_read_tokens,
+                cache_write_tokens = EXCLUDED.cache_write_tokens,
+                reasoning_tokens = EXCLUDED.reasoning_tokens,
                 cost_usd = EXCLUDED.cost_usd,
                 latency_ms = EXCLUDED.latency_ms,
                 response_text = EXCLUDED.response_text
@@ -75,10 +83,16 @@ public class JdbcLlmCallRepository implements LlmCallRepository {
                 .addValue("step", call.step())
                 .addValue("provider", call.provider())
                 .addValue("model", call.model())
+                .addValue("requestedModel", call.requestedModel())
+                .addValue("slot", call.slot())
+                .addValue("fallbackReason", call.fallbackReason())
                 .addValue("promptVersion", call.promptVersion())
                 .addValue("requestKey", call.requestKey())
                 .addValue("inputTokens", call.inputTokens())
                 .addValue("outputTokens", call.outputTokens())
+                .addValue("cacheReadTokens", call.cacheReadTokens())
+                .addValue("cacheWriteTokens", call.cacheWriteTokens())
+                .addValue("reasoningTokens", call.reasoningTokens())
                 .addValue("costUsd", call.costUsd())
                 .addValue("latencyMs", call.latencyMs())
                 .addValue("status", call.success() ? "SUCCESS" : "FAILED")

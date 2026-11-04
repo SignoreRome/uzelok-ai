@@ -67,6 +67,33 @@ class HttpLlmClientTest {
         assertThat(response.inputTokens()).isEqualTo(12);
         assertThat(response.outputTokens()).isEqualTo(7);
         assertThat(response.latencyMs()).isGreaterThanOrEqualTo(0);
+        assertThat(response.cacheReadTokens()).isZero();
+        assertThat(response.cacheWriteTokens()).isZero();
+        assertThat(response.reasoningTokens()).isZero();
+    }
+
+    @Test
+    void parsesCachedAndReasoningTokens() {
+        respond(200, """
+                {
+                  "choices": [{"message": {"content": "{\\"transcript\\":\\"ok\\"}"}}],
+                  "usage": {
+                    "prompt_tokens": 1000,
+                    "completion_tokens": 40,
+                    "prompt_tokens_details": {"cached_tokens": 800, "cache_write_tokens": 50},
+                    "completion_tokens_details": {"reasoning_tokens": 30}
+                  }
+                }
+                """);
+
+        HttpLlmClient.LlmHttpResponse response = client.complete(baseUrl, API_KEY, "model",
+                "system", "material", List.of(), "extract", SCHEMA);
+
+        assertThat(response.inputTokens()).isEqualTo(1000);
+        assertThat(response.outputTokens()).isEqualTo(40);
+        assertThat(response.cacheReadTokens()).isEqualTo(800);
+        assertThat(response.cacheWriteTokens()).isEqualTo(50);
+        assertThat(response.reasoningTokens()).isEqualTo(30);
     }
 
     @Test
