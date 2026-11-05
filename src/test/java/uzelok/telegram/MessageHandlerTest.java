@@ -340,6 +340,23 @@ class MessageHandlerTest {
     }
 
     @Test
+    void repeatedDeliveryOfSamePhotoDoesNotDuplicateAttachment() {
+        byte[] photo = TestImages.jpeg(31, 31);
+        telegram.putFile("photo", photo);
+
+        handler.handle(TelegramUpdates.photo(1, CHAT_ID, 500, FROM_ID, null, "photo", photo.length));
+        SourceItem first = source.findByChatAndMessage(CHAT_ID, 500).orElseThrow();
+        String hashAfterFirst = first.materialHash();
+
+        handler.handle(TelegramUpdates.photo(2, CHAT_ID, 500, FROM_ID, null, "photo", photo.length));
+        SourceItem again = source.findByChatAndMessage(CHAT_ID, 500).orElseThrow();
+
+        assertThat(attachments.countBySourceItem(again.id())).isEqualTo(1);
+        assertThat(again.materialHash()).isEqualTo(hashAfterFirst);
+        assertThat(jobs.size()).isEqualTo(1);
+    }
+
+    @Test
     void materialHashConflictIsReportedAsDuplicateWithoutNewJob() {
         InMemorySourceItemRepository original = source;
         handler.handle(TelegramUpdates.text(1, CHAT_ID, 500, FROM_ID, "материал"));

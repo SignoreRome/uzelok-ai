@@ -4,10 +4,12 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -240,8 +242,20 @@ public final class MessageHandler {
         SourceItemCreation sourceCreation = source.ensure(candidate);
         SourceItem item = sourceCreation.item();
 
+        Set<String> storedFiles = new HashSet<>();
+        for (SourceAttachment attachment : attachments.listBySourceItem(item.id())) {
+            if (attachment.telegramFileId() != null) {
+                storedFiles.add(attachment.telegramFileId());
+            }
+        }
         for (AttachmentReceiver.PreparedAttachment attachment : prepared) {
-            receiver.persist(item, attachment);
+            // Повторная доставка апдейта не должна дописывать тот же файл второй раз:
+            // иначе хеш материала считается по двум копиям и дедуп перестаёт срабатывать.
+            // Сравнение по file_id, а не по sha256: в альбоме могут лежать разные file_id
+            // с одинаковыми байтами, и это законный материал.
+            if (storedFiles.add(attachment.fileId())) {
+                receiver.persist(item, attachment);
+            }
         }
         if (item.textBody() == null && materialText != null) {
             source.setTextBody(item.id(), materialText);
