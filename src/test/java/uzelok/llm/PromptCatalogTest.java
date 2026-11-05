@@ -9,12 +9,26 @@ class PromptCatalogTest {
 
     @Test
     void loadsBothPromptsFromClasspath() {
-        PromptCatalog catalog = new PromptCatalog("v2");
+        PromptCatalog catalog = new PromptCatalog("v3");
 
-        assertThat(catalog.version()).isEqualTo("v2");
+        assertThat(catalog.version("extract")).isEqualTo("v3");
+        assertThat(catalog.version("draft")).isEqualTo("v3");
+        assertThat(catalog.version("theses")).isEqualTo("v3");
         assertThat(catalog.extract()).contains("дословную транскрипцию", "unclear_spans");
         assertThat(catalog.draft()).contains("taxonomy_mode", "free", "dictionary",
-                "topic", "summary", "body_md", "[[Name]]");
+                "topic", "summary", "body_md", "[[Name]]", "file_name",
+                "Two_Pointers", "Title_Case");
+    }
+
+    @Test
+    void keepsSeparateVersionPerStep() {
+        PromptCatalog catalog = new PromptCatalog("v2", "v3", "v2");
+
+        assertThat(catalog.version("extract")).isEqualTo("v2");
+        assertThat(catalog.version("draft")).isEqualTo("v3");
+        assertThat(catalog.version("theses")).isEqualTo("v2");
+        assertThat(catalog.extract()).contains("дословную транскрипцию", "unclear_spans");
+        assertThat(catalog.draft()).contains("file_name", "Two_Pointers");
     }
 
     @Test

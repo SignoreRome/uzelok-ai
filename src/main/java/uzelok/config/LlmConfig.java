@@ -18,7 +18,11 @@ public class LlmConfig {
 
     @Bean
     public PromptCatalog promptCatalog(UzelokProperties properties) {
-        return new PromptCatalog(properties.llm().promptVersion());
+        UzelokProperties.Llm llm = properties.llm();
+        return new PromptCatalog(
+                llm.promptVersions().getOrDefault("extract", llm.promptVersion()),
+                llm.promptVersions().getOrDefault("draft", llm.promptVersion()),
+                llm.promptVersions().getOrDefault("theses", llm.promptVersion()));
     }
 
     @Bean

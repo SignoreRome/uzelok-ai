@@ -90,7 +90,7 @@ public final class NoteRenderer {
             }
         }
 
-        String baseName = names.fromTitle(draft.title());
+        String baseName = names.sanitize(draft.fileName(), draft.title());
         String name = baseName;
         if (existingNames.contains(baseName.toLowerCase(Locale.ROOT))) {
             name = names.withSuffix(baseName, collisionSuffix(jobRef, noteId));

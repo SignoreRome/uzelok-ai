@@ -28,7 +28,12 @@ class StructuredSchemasTest {
         assertThat(schema.path("type").asString()).isEqualTo("object");
         assertThat(schema.path("additionalProperties").asBoolean()).isFalse();
         assertThat(schema.path("required").toString())
-                .contains("title", "type", "topic", "summary", "body_md", "confidence");
+                .contains("title", "type", "topic", "summary", "body_md", "confidence")
+                .doesNotContain("file_name");
+        assertThat(schema.path("properties").path("file_name").path("type").asString())
+                .isEqualTo("string");
+        assertThat(schema.path("properties").path("file_name").path("maxLength").asInt())
+                .isEqualTo(60);
         assertThat(schema.path("properties").path("confidence").path("minimum").asDouble())
                 .isEqualTo(0.0);
         assertThat(schema.path("properties").path("confidence").path("maximum").asDouble())

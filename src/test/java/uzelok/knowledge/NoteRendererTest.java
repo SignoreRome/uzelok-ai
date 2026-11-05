@@ -83,6 +83,33 @@ class NoteRendererTest {
     }
 
     @Test
+    void usesTranslatedFileNameFromDraft() {
+        NoteDraft draft = new NoteDraft("Метод двух указателей (Two Pointers)",
+                NoteType.concept, "two_pointers", "Метод двух указателей", "## Тело", 0.9,
+                "Two_Pointers");
+
+        RenderedNote note = renderer.render(taxonomy, base, NOTE_ID, JOB_REF, draft,
+                false, TODAY, Set.of());
+
+        assertThat(note.relPath())
+                .isEqualTo("40_Knowledge/Algorithms/Two_Pointers/Two_Pointers.md");
+        assertThat(note.fileName()).isEqualTo("Two_Pointers.md");
+    }
+
+    @Test
+    void fallsBackToTransliteratedTitleWhenDraftFileNameIsMissing() {
+        NoteDraft draft = new NoteDraft("Метод двух указателей", NoteType.concept,
+                "two_pointers", "Метод двух указателей", "## Тело", 0.9, null);
+
+        RenderedNote note = renderer.render(taxonomy, base, NOTE_ID, JOB_REF, draft,
+                false, TODAY, Set.of());
+
+        assertThat(note.relPath())
+                .isEqualTo("40_Knowledge/Algorithms/Two_Pointers/Metod_Dvukh_Ukazateley.md");
+        assertThat(note.fileName()).isEqualTo("Metod_Dvukh_Ukazateley.md");
+    }
+
+    @Test
     void normalizesWindowsLineEndingsAndTrailingSpaces() {
         NoteDraft draft = draft("Line Breaks", NoteType.concept, "Graphs", "Переносы строк",
                 "Первая строка   \r\nВторая строка\n\n\n");

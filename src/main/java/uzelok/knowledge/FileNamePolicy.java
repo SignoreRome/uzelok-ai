@@ -9,6 +9,8 @@ public final class FileNamePolicy {
 
     private static final Pattern VALID_NAME = Pattern.compile("[A-Za-z0-9_]+");
     private static final Pattern INVALID_CHARS = Pattern.compile("[^A-Za-z0-9_]");
+    private static final Pattern SEPARATORS = Pattern.compile("[\\s\\-.]+");
+    private static final Pattern KNOWN_EXTENSION = Pattern.compile("(?i)\\.(md|markdown)$");
     private static final Pattern REPEATED_UNDERSCORES = Pattern.compile("_+");
     private static final Pattern EDGE_UNDERSCORES = Pattern.compile("^_+|_+$");
     private static final String FALLBACK_NAME = "Note";
@@ -32,6 +34,29 @@ public final class FileNamePolicy {
         if (normalized.isEmpty()) {
             return FALLBACK_NAME;
         }
+        String name = titleCaseTokens(normalized);
+        return limit(name.isEmpty() ? FALLBACK_NAME : name);
+    }
+
+    public String sanitize(String candidate, String fallbackTitle) {
+        String value = candidate == null ? "" : candidate.trim();
+        value = KNOWN_EXTENSION.matcher(value).replaceFirst("");
+        boolean mixedAlphabet = value.codePoints()
+                .anyMatch(codePoint -> codePoint > 127 && Character.isLetterOrDigit(codePoint));
+        value = SEPARATORS.matcher(value).replaceAll("_");
+        value = INVALID_CHARS.matcher(value).replaceAll("");
+        value = REPEATED_UNDERSCORES.matcher(value).replaceAll("_");
+        value = EDGE_UNDERSCORES.matcher(value).replaceAll("");
+        String name = titleCaseTokens(value);
+        boolean tooFewSignificant = value.codePoints()
+                .filter(Character::isLetterOrDigit).count() < 2;
+        if (mixedAlphabet || tooFewSignificant || name.length() > maxLength) {
+            return fromTitle(fallbackTitle);
+        }
+        return name;
+    }
+
+    private static String titleCaseTokens(String normalized) {
         StringBuilder result = new StringBuilder();
         for (String token : normalized.split("_")) {
             if (token.isEmpty()) {
@@ -42,8 +67,7 @@ public final class FileNamePolicy {
             }
             result.append(titleCase(token));
         }
-        String name = result.isEmpty() ? FALLBACK_NAME : result.toString();
-        return limit(name);
+        return result.toString();
     }
 
     public String withSuffix(String baseName, String suffix) {

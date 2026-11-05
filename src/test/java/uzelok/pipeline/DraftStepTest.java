@@ -75,6 +75,22 @@ class DraftStepTest {
         assertThat(artifacts.count(job.id(), ArtifactKind.DRAFT_JSON)).isEqualTo(1);
     }
 
+    @Test
+    void oldDraftArtifactWithoutFileNameIsReadAsNull() {
+        ProcessingJob job = job(1);
+        String oldDraft = """
+                {"title":"Старая заметка","type":"concept","topic":"Graphs",
+                 "summary":"кратко","bodyMd":"## Тело","confidence":0.9}
+                """;
+        artifacts.save(new JobArtifact(UUID.randomUUID(), job.id(), tenantId,
+                ArtifactKind.DRAFT_JSON, 2, "sha", null, oldDraft, null, null, NOW));
+
+        NoteDraft draft = step.run(job);
+
+        assertThat(draft.fileName()).isNull();
+        assertThat(llm.draftCalls()).isZero();
+    }
+
     private ProcessingJob job(int draftVersion) {
         return new ProcessingJob(UUID.randomUUID(), tenantId, UUID.randomUUID(), base.id(),
                 JobStatus.DRAFTING, null, 0, NOW, null, null, null, null, null, NOW, NOW,

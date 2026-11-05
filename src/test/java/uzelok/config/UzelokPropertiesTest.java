@@ -77,6 +77,7 @@ class UzelokPropertiesTest {
             assertThat(properties.llm().pricing().get("opencode-go/draft-model")
                     .cacheReadPerMillion()).isEqualByComparingTo(new BigDecimal("0.01"));
             assertThat(properties.llm().promptVersion()).isEqualTo("v1");
+            assertThat(properties.llm().promptVersions()).isEmpty();
             assertThat(properties.llm().dailyBudgetUsd())
                     .isEqualByComparingTo(new BigDecimal("2.00"));
             assertThat(properties.llm().timeoutSeconds()).isEqualTo(120);
