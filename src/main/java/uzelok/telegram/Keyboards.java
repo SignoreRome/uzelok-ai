@@ -17,6 +17,11 @@ public final class Keyboards {
                         button("❌ Отмена", cancelToken))));
     }
 
+    public static InlineKeyboard duplicate(String regenerateToken, Messages messages) {
+        return new InlineKeyboard(List.of(
+                List.of(button(messages.text("duplicate.button.regenerate"), regenerateToken))));
+    }
+
     public static InlineKeyboard onboarding(Messages messages) {
         return new InlineKeyboard(List.of(
                 List.of(new InlineButton(messages.text("base.button.create"), "onb:create"),

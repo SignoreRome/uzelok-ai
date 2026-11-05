@@ -1,12 +1,8 @@
 package uzelok.pipeline;
 
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.HexFormat;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -14,6 +10,7 @@ import uzelok.domain.model.ArtifactKind;
 import uzelok.domain.model.Extraction;
 import uzelok.domain.model.JobArtifact;
 import uzelok.domain.model.LlmContext;
+import uzelok.domain.model.MaterialHash;
 import uzelok.domain.model.ProcessingJob;
 import uzelok.domain.model.SourceAttachment;
 import uzelok.domain.model.SourceItem;
@@ -58,7 +55,7 @@ public final class ExtractStep {
             }
         }
         String text = item.textBody();
-        String inputHash = inputHash(stored, text);
+        String inputHash = MaterialHash.of(stored, text);
         LlmContext context = new LlmContext(job.tenantId(), job.id(), "EXTRACT", inputHash, 0);
         Extraction extraction = llm.extract(context, List.copyOf(images), text);
 
@@ -69,32 +66,12 @@ public final class ExtractStep {
                 job.tenantId(),
                 ArtifactKind.EXTRACTION,
                 1,
-                sha256(inline),
+                MaterialHash.sha256(inline),
                 null,
                 inline,
                 null,
                 null,
                 Instant.now());
         return artifacts.save(artifact);
-    }
-
-    private static String inputHash(List<SourceAttachment> attachments, String text) {
-        if (text != null && !text.isBlank()) {
-            return sha256(text);
-        }
-        StringBuilder material = new StringBuilder();
-        for (SourceAttachment attachment : attachments) {
-            material.append(attachment.sha256() == null ? "" : attachment.sha256());
-        }
-        return sha256(material.toString());
-    }
-
-    private static String sha256(String value) {
-        try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            return HexFormat.of().formatHex(digest.digest(value.getBytes(StandardCharsets.UTF_8)));
-        } catch (NoSuchAlgorithmException exception) {
-            throw new IllegalStateException("SHA-256 недоступен", exception);
-        }
     }
 }

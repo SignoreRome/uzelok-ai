@@ -33,6 +33,7 @@ public class JdbcNoteRepository implements NoteRepository {
     private static final String UPDATE_EXISTING_NOTE = """
             UPDATE note
             SET content_hash = :contentHash,
+                file_name = :fileName,
                 rel_path = :relPath,
                 updated_at = now()
             WHERE id = :id
