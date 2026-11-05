@@ -5,5 +5,6 @@ public enum PendingActionType {
     REGENERATE,
     INBOX,
     CANCEL,
-    RETRY
+    RETRY,
+    DUP_REGEN
 }

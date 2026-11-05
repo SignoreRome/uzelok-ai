@@ -19,19 +19,26 @@ public final class InMemoryNoteRepository implements NoteRepository {
 
     @Override
     public synchronized UUID upsert(NoteRecord note) {
-        String key = note.knowledgeBaseId() + "/" + note.fileName();
-        NoteRecord existing = notes.get(key);
+        NoteRecord existing = notes.values().stream()
+                .filter(candidate -> candidate.noteId().equals(note.noteId())
+                        || (candidate.knowledgeBaseId().equals(note.knowledgeBaseId())
+                        && candidate.fileName().equals(note.fileName())))
+                .findFirst()
+                .orElse(null);
         if (existing != null) {
             NoteRecord updated = new NoteRecord(existing.noteId(), note.tenantId(),
                     note.knowledgeBaseId(), note.jobId(), note.type(), note.title(), note.domain(),
                     note.topic(), note.fileName(), note.relPath(), note.contentHash());
-            notes.put(key, updated);
+            notes.entrySet().removeIf(entry -> entry.getValue().noteId()
+                    .equals(existing.noteId()));
+            notes.put(note.knowledgeBaseId() + "/" + note.fileName(), updated);
             return existing.noteId();
         }
         UUID id = note.noteId() == null ? UUID.randomUUID() : note.noteId();
-        notes.put(key, new NoteRecord(id, note.tenantId(), note.knowledgeBaseId(), note.jobId(),
-                note.type(), note.title(), note.domain(), note.topic(), note.fileName(),
-                note.relPath(), note.contentHash()));
+        notes.put(note.knowledgeBaseId() + "/" + note.fileName(),
+                new NoteRecord(id, note.tenantId(), note.knowledgeBaseId(), note.jobId(),
+                        note.type(), note.title(), note.domain(), note.topic(), note.fileName(),
+                        note.relPath(), note.contentHash()));
         return id;
     }
 

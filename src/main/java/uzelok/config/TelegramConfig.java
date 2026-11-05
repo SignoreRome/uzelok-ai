@@ -22,6 +22,7 @@ import uzelok.domain.port.AttachmentRepository;
 import uzelok.domain.port.AuditRepository;
 import uzelok.domain.port.JobRepository;
 import uzelok.domain.port.KnowledgeBaseRepository;
+import uzelok.domain.port.NoteRepository;
 import uzelok.domain.port.OnboardingHandler;
 import uzelok.domain.port.PendingActionRepository;
 import uzelok.domain.port.SourceItemRepository;
@@ -142,9 +143,11 @@ public class TelegramConfig {
                                          TelegramGateway telegram, CommandHandler commands,
                                          AttachmentReceiver receiver, Clock clock,
                                          UzelokProperties properties, Messages messages,
-                                         OnboardingHandler onboarding) {
+                                         OnboardingHandler onboarding, NoteRepository notes,
+                                         PendingActionRepository actions) {
         return new MessageHandler(access, bases, source, attachments, jobs, audit, telegram, commands,
-                receiver, clock, properties.limits(), properties.telegram(), messages, onboarding);
+                receiver, clock, properties.limits(), properties.telegram(), messages, onboarding,
+                notes, actions);
     }
 
     @Bean

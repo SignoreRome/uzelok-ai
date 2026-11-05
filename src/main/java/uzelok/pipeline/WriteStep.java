@@ -45,10 +45,12 @@ public final class WriteStep {
     }
 
     public WriteResult run(ProcessingJob job) {
+        KnowledgeBase base = base(job);
         Optional<NoteRecord> alreadyWritten = notes.findByJobId(job.id());
         if (alreadyWritten.isPresent()) {
             NoteRecord note = alreadyWritten.get();
-            Path target = note.relPath() == null ? null : Path.of(note.relPath());
+            Path target = note.relPath() == null ? null
+                    : Path.of(base.rootPath()).resolve(note.relPath()).normalize();
             if (target != null && java.nio.file.Files.isRegularFile(target)) {
                 // Шаг повторяется после сбоя уведомления: файл уже на месте, второй раз не пишем.
                 return new WriteResult(
@@ -62,7 +64,6 @@ public final class WriteStep {
                 .orElseThrow(() -> new IllegalStateException(
                         "нет артефакта DRAFT_JSON для задачи " + job.id()));
         NoteDraft draft = json.read(draftArtifact.inlineText(), NoteDraft.class);
-        KnowledgeBase base = base(job);
 
         PreparedNote prepared = knowledge.prepare(base, job.id().toString(), draft,
                 job.forceInbox());

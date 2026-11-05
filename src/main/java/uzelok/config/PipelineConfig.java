@@ -30,6 +30,7 @@ import uzelok.pipeline.RenderStep;
 import uzelok.pipeline.StatsService;
 import uzelok.pipeline.WriteStep;
 import uzelok.domain.port.PendingActionRepository;
+import uzelok.telegram.Messages;
 import java.nio.file.Path;
 import java.time.Clock;
 
@@ -74,9 +75,14 @@ public class PipelineConfig {
 
     @Bean
     public ActionDispatcher actionDispatcher(JobRepository jobs, JobService state,
-                                             UzelokProperties properties) {
+                                             SourceItemRepository source,
+                                             AttachmentRepository attachments, Clock clock,
+                                             UzelokProperties properties, AuditRepository audit,
+                                             Messages messages) {
         return new ActionDispatcher(
-                new ActionService(jobs, state, properties.worker().maxAttempts()));
+                new ActionService(jobs, state, properties.worker().maxAttempts(), source,
+                        attachments, clock, properties.limits().jobsPerDay(),
+                        properties.limits().jobsPerHour(), audit, messages));
     }
 
     @Bean

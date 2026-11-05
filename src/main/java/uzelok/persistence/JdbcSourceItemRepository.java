@@ -22,7 +22,7 @@ public class JdbcSourceItemRepository implements SourceItemRepository {
 
     private static final String SELECT_COLUMNS = """
             SELECT id, tenant_id, knowledge_base_id, chat_id, telegram_message_id,
-                   kind, media_group_id, text_body, created_at
+                   kind, media_group_id, text_body, created_at, material_hash
             FROM source_item
             """;
 
@@ -34,16 +34,25 @@ public class JdbcSourceItemRepository implements SourceItemRepository {
 
     private static final String INSERT_SOURCE_ITEM = """
             INSERT INTO source_item (id, tenant_id, knowledge_base_id, chat_id, telegram_message_id,
-                                     kind, media_group_id, text_body, created_at)
+                                     kind, media_group_id, text_body, created_at, material_hash)
             VALUES (:id, :tenantId, :knowledgeBaseId, :chatId, :telegramMessageId,
-                    :kind, :mediaGroupId, :textBody, :createdAt)
+                    :kind, :mediaGroupId, :textBody, :createdAt, :materialHash)
             ON CONFLICT DO NOTHING
             """;
+
+    private static final String SELECT_BY_MATERIAL_HASH = SELECT_COLUMNS
+            + " WHERE tenant_id = :tenantId AND material_hash = :materialHash";
 
     private static final String UPDATE_TEXT_BODY = """
             UPDATE source_item
             SET text_body = :text
             WHERE id = :id AND text_body IS NULL
+            """;
+
+    private static final String UPDATE_MATERIAL_HASH = """
+            UPDATE source_item
+            SET material_hash = :materialHash
+            WHERE id = :id
             """;
 
     private static final RowMapper<SourceItem> ROW_MAPPER = (rs, rowNum) -> new SourceItem(
@@ -55,7 +64,8 @@ public class JdbcSourceItemRepository implements SourceItemRepository {
             SourceKind.valueOf(rs.getString("kind")),
             rs.getString("media_group_id"),
             rs.getString("text_body"),
-            toInstant(rs.getObject("created_at", OffsetDateTime.class)));
+            toInstant(rs.getObject("created_at", OffsetDateTime.class)),
+            rs.getString("material_hash"));
 
     private final NamedParameterJdbcTemplate jdbc;
 
@@ -83,7 +93,8 @@ public class JdbcSourceItemRepository implements SourceItemRepository {
                 .addValue("kind", candidate.kind().name())
                 .addValue("mediaGroupId", blankToNull(candidate.mediaGroupId()))
                 .addValue("textBody", candidate.textBody())
-                .addValue("createdAt", toOffsetDateTime(createdAt)));
+                .addValue("createdAt", toOffsetDateTime(createdAt))
+                .addValue("materialHash", candidate.materialHash()));
 
         SourceItem item = findExisting(candidate.chatId(), candidate.telegramMessageId(),
                         candidate.mediaGroupId())
@@ -124,6 +135,29 @@ public class JdbcSourceItemRepository implements SourceItemRepository {
                         .addValue("mediaGroupId", mediaGroupId),
                 ROW_MAPPER);
         return found.stream().findFirst();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Optional<SourceItem> findByTenantAndMaterialHash(UUID tenantId, String materialHash) {
+        List<SourceItem> found = jdbc.query(
+                SELECT_BY_MATERIAL_HASH,
+                new MapSqlParameterSource()
+                        .addValue("tenantId", tenantId)
+                        .addValue("materialHash", materialHash),
+                ROW_MAPPER);
+        return found.stream().findFirst();
+    }
+
+    @Override
+    @Transactional
+    public boolean setMaterialHash(UUID id, String materialHash) {
+        int updated = jdbc.update(
+                UPDATE_MATERIAL_HASH,
+                new MapSqlParameterSource()
+                        .addValue("id", id)
+                        .addValue("materialHash", materialHash));
+        return updated == 1;
     }
 
     @Override

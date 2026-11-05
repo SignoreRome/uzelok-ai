@@ -31,6 +31,19 @@ public final class AttachmentReceiver {
     public record StoredAttachment(Path path, String mime, long byteSize, String sha256) {
     }
 
+    public record PreparedAttachment(String fileId, String mime, long byteSize, String sha256,
+                                     byte[] bytes, String textBody) {
+
+        public PreparedAttachment {
+            bytes = bytes.clone();
+        }
+
+        @Override
+        public byte[] bytes() {
+            return bytes.clone();
+        }
+    }
+
     private final UzelokProperties.Telegram props;
     private final UzelokProperties.Storage storage;
     private final AttachmentRepository repository;
@@ -48,7 +61,12 @@ public final class AttachmentReceiver {
 
     public StoredAttachment receive(SourceItem item, String fileId, String declaredMime, long declaredSize,
                                     String fileName) {
-        boolean document = item.kind() == SourceKind.DOCUMENT;
+        return persist(item, prepare(fileId, declaredMime, declaredSize, fileName, item.kind()));
+    }
+
+    public PreparedAttachment prepare(String fileId, String declaredMime, long declaredSize,
+                                      String fileName, SourceKind kind) {
+        boolean document = kind == SourceKind.DOCUMENT;
         long limit = document ? props.maxDocumentBytes() : props.maxPhotoBytes();
         if (declaredSize > limit) {
             throw new AttachmentRejected(sizeMessage(document, declaredSize, limit));
@@ -56,11 +74,13 @@ public final class AttachmentReceiver {
 
         byte[] bytes = gateway.download(fileId, limit);
         String mime;
+        String textBody = null;
         if (document) {
             if (!isTextUtf8(bytes)) {
                 throw new AttachmentRejected(messages.text("attachment.bad_text"));
             }
             mime = textMime(fileName);
+            textBody = new String(bytes, StandardCharsets.UTF_8);
         } else {
             mime = detectImageMime(bytes)
                     .orElseThrow(() -> new AttachmentRejected(messages.text("photo.bad_format")));
@@ -80,12 +100,15 @@ public final class AttachmentReceiver {
             }
         }
 
-        String sha256 = sha256(bytes);
-        Path path = targetPath(item, sha256, extension(mime));
-        writeIfAbsent(path, bytes);
-        StoredAttachment stored = new StoredAttachment(path, mime, bytes.length, sha256);
-        repository.append(item.id(), item.tenantId(), fileId, path.toString(), mime, bytes.length, sha256);
-        return stored;
+        return new PreparedAttachment(fileId, mime, bytes.length, sha256(bytes), bytes, textBody);
+    }
+
+    public StoredAttachment persist(SourceItem item, PreparedAttachment prepared) {
+        Path path = targetPath(item, prepared.sha256(), extension(prepared.mime()));
+        writeIfAbsent(path, prepared.bytes());
+        repository.append(item.id(), item.tenantId(), prepared.fileId(), path.toString(),
+                prepared.mime(), prepared.byteSize(), prepared.sha256());
+        return new StoredAttachment(path, prepared.mime(), prepared.byteSize(), prepared.sha256());
     }
 
     private Path targetPath(SourceItem item, String sha256, String extension) {

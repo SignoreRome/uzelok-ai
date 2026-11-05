@@ -27,7 +27,8 @@ public final class InMemorySourceItemRepository implements SourceItemRepository 
                 candidate.kind(),
                 candidate.mediaGroupId(),
                 candidate.textBody(),
-                candidate.createdAt() == null ? java.time.Instant.now() : candidate.createdAt());
+                candidate.createdAt() == null ? java.time.Instant.now() : candidate.createdAt(),
+                candidate.materialHash());
         items.put(stored.id(), stored);
         return new SourceItemCreation(stored, true);
     }
@@ -48,6 +49,35 @@ public final class InMemorySourceItemRepository implements SourceItemRepository 
     }
 
     @Override
+    public synchronized Optional<SourceItem> findByTenantAndMaterialHash(UUID tenantId,
+                                                                         String materialHash) {
+        return items.values().stream()
+                .filter(item -> item.tenantId().equals(tenantId))
+                .filter(item -> materialHash.equals(item.materialHash()))
+                .findFirst();
+    }
+
+    @Override
+    public synchronized boolean setMaterialHash(UUID id, String materialHash) {
+        SourceItem existing = items.get(id);
+        if (existing == null) {
+            return false;
+        }
+        items.put(id, new SourceItem(
+                existing.id(),
+                existing.tenantId(),
+                existing.knowledgeBaseId(),
+                existing.chatId(),
+                existing.telegramMessageId(),
+                existing.kind(),
+                existing.mediaGroupId(),
+                existing.textBody(),
+                existing.createdAt(),
+                materialHash));
+        return true;
+    }
+
+    @Override
     public synchronized boolean setTextBody(UUID id, String text) {
         SourceItem existing = items.get(id);
         if (existing == null || existing.textBody() != null) {
@@ -62,7 +92,8 @@ public final class InMemorySourceItemRepository implements SourceItemRepository 
                 existing.kind(),
                 existing.mediaGroupId(),
                 text,
-                existing.createdAt()));
+                existing.createdAt(),
+                existing.materialHash()));
         return true;
     }
 
@@ -73,6 +104,10 @@ public final class InMemorySourceItemRepository implements SourceItemRepository 
 
     public synchronized int size() {
         return items.size();
+    }
+
+    public synchronized Optional<String> materialHashOf(UUID id) {
+        return Optional.ofNullable(items.get(id)).map(SourceItem::materialHash);
     }
 
     public synchronized java.util.List<SourceItem> all() {

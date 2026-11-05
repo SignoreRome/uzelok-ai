@@ -3,12 +3,16 @@ package uzelok.pipeline;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Instant;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import tools.jackson.databind.json.JsonMapper;
 import uzelok.config.JacksonJsonCodec;
 import uzelok.domain.model.ArtifactKind;
@@ -17,6 +21,7 @@ import uzelok.domain.model.JobStatus;
 import uzelok.domain.model.KnowledgeBase;
 import uzelok.domain.model.KnowledgeBaseKind;
 import uzelok.domain.model.NoteDraft;
+import uzelok.domain.model.NoteRecord;
 import uzelok.domain.model.NoteType;
 import uzelok.domain.model.ProcessingJob;
 import uzelok.domain.model.Taxonomy;
@@ -31,6 +36,9 @@ import uzelok.support.RecordingAuditRepository;
 class WriteStepTest {
 
     private static final Instant NOW = Instant.parse("2026-05-01T12:00:00Z");
+
+    @TempDir
+    Path vault;
 
     private final UUID tenantId = UUID.randomUUID();
     private final KnowledgeBase base = new KnowledgeBase(UUID.randomUUID(),
@@ -112,6 +120,29 @@ class WriteStepTest {
     }
 
     @Test
+    void repeatedRunDoesNotCreateSecondFileWhenNoteAlreadyOnDisk() throws IOException {
+        ProcessingJob job = job(false);
+        KnowledgeBase diskBase = new KnowledgeBase(base.id(), base.kind(), vault.toString(),
+                base.taxonomyRelPath(), base.inboxRelPath());
+        FakeStore diskStore = new FakeStore();
+        diskStore.root = vault;
+        WriteStep filesystemStep = new WriteStep(artifacts,
+                new FixedKnowledgeBaseRepository(diskBase), diskStore, notes, audit, codec);
+
+        filesystemStep.run(job);
+        filesystemStep.run(job);
+
+        Path noteDir = vault.resolve("40_Knowledge/Algorithms/Graphs");
+        try (var files = Files.list(noteDir)) {
+            assertThat(files.toList()).hasSize(1);
+        }
+        NoteRecord note = notes.findByJobId(job.id()).orElseThrow();
+        assertThat(note.fileName())
+                .isEqualTo(Path.of(note.relPath()).getFileName().toString());
+        assertThat(diskStore.writes).isEqualTo(1);
+    }
+
+    @Test
     void forceInboxIsPassedToKnowledgeStore() {
         knowledge.relPath = "40_Knowledge/_Inbox/Test.md";
         ProcessingJob job = job(true);
@@ -143,6 +174,7 @@ class WriteStepTest {
         private String relPath = "40_Knowledge/Algorithms/Graphs/Test.md";
         private String markdown = "## v1";
         private String hash = "hash-1";
+        private Path root;
 
         @Override
         public PreparedNote prepare(KnowledgeBase ignored, String jobRef, NoteDraft draft,
@@ -155,6 +187,15 @@ class WriteStepTest {
         @Override
         public WrittenNote write(KnowledgeBase ignored, PreparedNote note) {
             writes++;
+            if (root != null) {
+                Path target = root.resolve(note.relPath());
+                try {
+                    Files.createDirectories(target.getParent());
+                    Files.writeString(target, note.markdown());
+                } catch (IOException exception) {
+                    throw new IllegalStateException("не удалось записать файл", exception);
+                }
+            }
             if (failAfterWrite) {
                 throw new IllegalStateException("падение после записи файла");
             }

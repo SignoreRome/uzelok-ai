@@ -19,6 +19,16 @@ public interface SourceItemRepository {
     Optional<SourceItem> findByChatAndMediaGroup(long chatId, String mediaGroupId);
 
     /**
+     * Материал с тем же содержимым в пределах тенанта. Нужен для дедупа повторной отправки.
+     */
+    Optional<SourceItem> findByTenantAndMaterialHash(UUID tenantId, String materialHash);
+
+    /**
+     * Записывает хеш содержимого материала.
+     */
+    boolean setMaterialHash(UUID id, String materialHash);
+
+    /**
      * Записывает текст документа, только если {@code text_body} ещё не заполнен.
      *
      * @return {@code true}, если строка обновлена

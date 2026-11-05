@@ -20,9 +20,17 @@ public final class TelegramUpdates {
 
     public static Update photo(int updateId, long chatId, long messageId, long fromId,
                                String mediaGroupId, String fileId, int fileSize) {
+        return photo(updateId, chatId, messageId, fromId, mediaGroupId, fileId, fileSize, null);
+    }
+
+    public static Update photo(int updateId, long chatId, long messageId, long fromId,
+                               String mediaGroupId, String fileId, int fileSize, String caption) {
         Message message = message(chatId, messageId, fromId);
         if (mediaGroupId != null) {
             message.setMediaGroupId(mediaGroupId);
+        }
+        if (caption != null) {
+            message.setCaption(caption);
         }
         message.setPhoto(java.util.List.of(PhotoSize.builder()
                 .fileId(fileId)
@@ -35,7 +43,17 @@ public final class TelegramUpdates {
 
     public static Update document(int updateId, long chatId, long messageId, long fromId,
                                   String fileId, String fileName, String mime, long fileSize) {
+        return document(updateId, chatId, messageId, fromId, fileId, fileName, mime,
+                fileSize, null);
+    }
+
+    public static Update document(int updateId, long chatId, long messageId, long fromId,
+                                  String fileId, String fileName, String mime, long fileSize,
+                                  String caption) {
         Message message = message(chatId, messageId, fromId);
+        if (caption != null) {
+            message.setCaption(caption);
+        }
         org.telegram.telegrambots.meta.api.objects.Document document =
                 new org.telegram.telegrambots.meta.api.objects.Document();
         document.setFileId(fileId);
