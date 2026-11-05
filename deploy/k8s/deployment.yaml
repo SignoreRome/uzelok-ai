@@ -26,7 +26,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: uzelok
-          image: uzelok:0.1.2
+          image: uzelok:0.1.3
           imagePullPolicy: IfNotPresent
           envFrom:
             - secretRef:
