@@ -4,8 +4,9 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Collections;
-import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import java.util.stream.Stream;
 
@@ -15,15 +16,20 @@ public final class NameUniqueness {
             Set.of("_meta", ".obsidian", ".trash");
 
     public Set<String> existingNames(Path knowledgeRoot) {
+        return canonicalNames(knowledgeRoot).keySet();
+    }
+
+    public Map<String, String> canonicalNames(Path knowledgeRoot) {
         Path knowledge = knowledgeRoot.toAbsolutePath().normalize();
-        Set<String> names = new HashSet<>();
+        Map<String, String> names = new LinkedHashMap<>();
 
         if (Files.isDirectory(knowledge)) {
             try (Stream<Path> walk = Files.walk(knowledge)) {
                 walk.filter(Files::isRegularFile).forEach(file -> {
                     Path relative = knowledge.relativize(file);
                     if (isIncluded(relative)) {
-                        names.add(stem(relative));
+                        String stem = stem(relative);
+                        names.putIfAbsent(stem.toLowerCase(Locale.ROOT), stem);
                     }
                 });
             } catch (IOException ignored) {
@@ -31,7 +37,7 @@ public final class NameUniqueness {
             }
         }
 
-        return Collections.unmodifiableSet(names);
+        return Collections.unmodifiableMap(names);
     }
 
     private static boolean isIncluded(Path relative) {
@@ -48,6 +54,6 @@ public final class NameUniqueness {
 
     private static String stem(Path relative) {
         String fileName = relative.getFileName().toString();
-        return fileName.substring(0, fileName.length() - 3).toLowerCase(Locale.ROOT);
+        return fileName.substring(0, fileName.length() - 3);
     }
 }

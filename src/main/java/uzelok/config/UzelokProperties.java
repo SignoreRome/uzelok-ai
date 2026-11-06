@@ -45,6 +45,7 @@ public record UzelokProperties(
             Map<String, Step> steps,
             Map<String, Pricing> pricing,
             @DefaultValue("v1") String promptVersion,
+            @DefaultValue Map<String, String> promptVersions,
             @DefaultValue("2.00") BigDecimal dailyBudgetUsd,
             @DefaultValue("120") int timeoutSeconds,
             @DefaultValue("") String proxyUrl) {
@@ -53,6 +54,7 @@ public record UzelokProperties(
             providers = providers == null ? Map.of() : Map.copyOf(providers);
             steps = steps == null ? Map.of() : Map.copyOf(steps);
             pricing = pricing == null ? Map.of() : Map.copyOf(pricing);
+            promptVersions = promptVersions == null ? Map.of() : Map.copyOf(promptVersions);
         }
     }
 

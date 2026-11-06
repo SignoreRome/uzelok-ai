@@ -12,7 +12,8 @@ public record PreviewView(
         String summary,
         String bodyExcerpt,
         String fullMarkdown,
-        List<String> warnings) {
+        List<String> warnings,
+        int draftVersion) {
 
     public PreviewView {
         warnings = warnings == null ? List.of() : List.copyOf(warnings);

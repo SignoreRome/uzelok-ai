@@ -97,6 +97,23 @@ class PlainVaultStoreTest {
     }
 
     @Test
+    void collisionBetweenModelFileNamesAddsJobSuffix() {
+        NoteDraft first = new NoteDraft("Метод двух указателей", NoteType.concept,
+                "Kafka Streams", "Первый черновик", "## Тело", 0.9, "Two_Pointers");
+        PreparedNote initial = store.prepare(base, JOB_REF, first, false);
+        store.write(base, initial);
+
+        NoteDraft second = new NoteDraft("Метод двух указателей", NoteType.concept,
+                "Kafka Streams", "Второй черновик", "## Тело", 0.9, "Two_Pointers");
+        PreparedNote collision = store.prepare(base, JOB_REF, second, false);
+
+        assertThat(initial.relPath()).isEqualTo("notes/Kafka_Streams/Two_Pointers.md");
+        assertThat(collision.relPath())
+                .isEqualTo("notes/Kafka_Streams/Two_Pointers_12345678.md");
+        assertThat(collision.warnings()).anyMatch(warning -> warning.contains("имя занято"));
+    }
+
+    @Test
     void forceInboxIsIgnoredForNeutralBase() {
         PreparedNote prepared = store.prepare(base, JOB_REF,
                 draft("Forced Note", "Kafka Streams"), true);

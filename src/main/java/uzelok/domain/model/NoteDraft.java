@@ -6,5 +6,16 @@ public record NoteDraft(
         String topic,
         String summary,
         String bodyMd,
-        double confidence) {
+        double confidence,
+        String fileName) {
+
+    public NoteDraft(
+            String title,
+            NoteType type,
+            String topic,
+            String summary,
+            String bodyMd,
+            double confidence) {
+        this(title, type, topic, summary, bodyMd, confidence, null);
+    }
 }

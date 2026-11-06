@@ -73,21 +73,24 @@ public final class OpenAiCompatibleLlmGateway implements LlmGateway {
     public Extraction extract(LlmContext context, List<Path> images, String text) {
         String step = step(context);
         LlmRouter.Route route = router.route("extract");
-        Optional<String> cached = findCached(route, step, context, "");
+        boolean textOnly = images.isEmpty() && text != null && !text.isBlank();
+        String promptName = textOnly ? "theses" : "extract";
+        String promptVersion = prompts.version(promptName);
+        Optional<String> cached = findCached(route, step, context, "", promptVersion);
         if (cached.isPresent()) {
             return parseExtraction(cached.get());
         }
         checkBudget(context.tenantId());
-        if (images.isEmpty() && text != null && !text.isBlank()) {
+        if (textOnly) {
             // Текстовый материал уже расшифрован: транскрибировать нечего, нужны только тезисы.
             // Промпт распознавания на таком входе даёт пустой transcript и валит контракт.
             return call(route, context, step, prompts.theses(), text, List.of(), "theses",
-                    StructuredSchemas.THESES, "",
+                    StructuredSchemas.THESES, "", promptVersion,
                     content -> parseTheses(text, content));
         }
         return call(route, context, step, prompts.extract(),
                 text == null ? "" : text, images, "extract", StructuredSchemas.EXTRACT, "",
-                this::parseExtraction);
+                promptVersion, this::parseExtraction);
     }
 
     @Override
@@ -96,21 +99,22 @@ public final class OpenAiCompatibleLlmGateway implements LlmGateway {
         String step = step(context);
         LlmRouter.Route route = router.route("draft");
         String variant = taxonomy.isFree() ? "free" : "dictionary";
-        Optional<String> cached = findCached(route, step, context, variant);
+        String promptVersion = prompts.version("draft");
+        Optional<String> cached = findCached(route, step, context, variant, promptVersion);
         if (cached.isPresent()) {
             return parseDraft(cached.get());
         }
         checkBudget(context.tenantId());
         String userPrompt = draftPrompt(extraction, taxonomy, existingNames);
         return call(route, context, step, prompts.draft(), userPrompt, List.of(),
-                "draft", StructuredSchemas.DRAFT, variant, this::parseDraft);
+                "draft", StructuredSchemas.DRAFT, variant, promptVersion, this::parseDraft);
     }
 
     private Optional<String> findCached(LlmRouter.Route route, String step, LlmContext context,
-                                        String variant) {
+                                        String variant, String promptVersion) {
         for (String model : route.models()) {
-            Optional<String> cached =
-                    calls.findSuccessfulResponse(requestKey(step, context, model, variant));
+            Optional<String> cached = calls.findSuccessfulResponse(
+                    requestKey(step, context, model, variant, promptVersion));
             if (cached.isPresent()) {
                 return cached;
             }
@@ -121,12 +125,12 @@ public final class OpenAiCompatibleLlmGateway implements LlmGateway {
     private <T> T call(LlmRouter.Route route, LlmContext context, String step,
                        String systemPrompt, String userPrompt, List<Path> images,
                        String schemaName, String jsonSchema, String variant,
-                       Function<String, T> parser) {
+                       String promptVersion, Function<String, T> parser) {
         LlmCallFailed lastFailure = null;
         String lastReason = null;
         String lastFallbackReason = null;
         String lastModel = route.models().getFirst();
-        String lastRequestKey = requestKey(step, context, lastModel, variant);
+        String lastRequestKey = requestKey(step, context, lastModel, variant, promptVersion);
         String requestedModel = route.models().getFirst();
         String slot = "uzelok." + step.toLowerCase(java.util.Locale.ROOT);
         for (int index = 0; index < route.models().size(); index++) {
@@ -134,7 +138,7 @@ public final class OpenAiCompatibleLlmGateway implements LlmGateway {
             String fallbackReason = index == 0 ? null : lastReason;
             lastFallbackReason = fallbackReason;
             lastModel = model;
-            String requestKey = requestKey(step, context, model, variant);
+            String requestKey = requestKey(step, context, model, variant, promptVersion);
             lastRequestKey = requestKey;
             HttpLlmClient.LlmHttpResponse response;
             try {
@@ -152,9 +156,10 @@ public final class OpenAiCompatibleLlmGateway implements LlmGateway {
                 parsed = parser.apply(response.content());
             } catch (LlmContractViolation violation) {
                 recordFailure(context, step, route, requestedModel, model, slot, fallbackReason,
-                        requestKey, response.inputTokens(), response.outputTokens(),
-                        response.cacheReadTokens(), response.cacheWriteTokens(),
-                        response.reasoningTokens(), response.latencyMs(), response.content());
+                        promptVersion, requestKey, response.inputTokens(),
+                        response.outputTokens(), response.cacheReadTokens(),
+                        response.cacheWriteTokens(), response.reasoningTokens(),
+                        response.latencyMs(), response.content());
                 throw violation;
             }
             BigDecimal cost = cost(route.provider(), model, response.inputTokens(),
@@ -169,7 +174,7 @@ public final class OpenAiCompatibleLlmGateway implements LlmGateway {
                     model,
                     slot,
                     fallbackReason,
-                    prompts.version(),
+                    promptVersion,
                     requestKey,
                     response.inputTokens(),
                     response.outputTokens(),
@@ -187,7 +192,7 @@ public final class OpenAiCompatibleLlmGateway implements LlmGateway {
         }
 
         recordFailure(context, step, route, requestedModel, lastModel, slot, lastFallbackReason,
-                lastRequestKey, 0, 0, 0, 0, 0, 0, null);
+                promptVersion, lastRequestKey, 0, 0, 0, 0, 0, 0, null);
         throw lastFailure == null ? new LlmCallFailed("LLM не вернул ответ") : lastFailure;
     }
 
@@ -197,9 +202,10 @@ public final class OpenAiCompatibleLlmGateway implements LlmGateway {
      */
     private void recordFailure(LlmContext context, String step, LlmRouter.Route route,
                                String requestedModel, String model, String slot,
-                               String fallbackReason, String requestKey, int inputTokens,
-                               int outputTokens, int cacheReadTokens, int cacheWriteTokens,
-                               int reasoningTokens, int latencyMs, String responseText) {
+                               String fallbackReason, String promptVersion, String requestKey,
+                               int inputTokens, int outputTokens, int cacheReadTokens,
+                               int cacheWriteTokens, int reasoningTokens, int latencyMs,
+                               String responseText) {
         calls.record(new LlmCallRecord(
                 context.tenantId(),
                 context.jobId(),
@@ -209,7 +215,7 @@ public final class OpenAiCompatibleLlmGateway implements LlmGateway {
                 model,
                 slot,
                 fallbackReason,
-                prompts.version(),
+                promptVersion,
                 requestKey,
                 inputTokens,
                 outputTokens,
@@ -271,9 +277,10 @@ public final class OpenAiCompatibleLlmGateway implements LlmGateway {
                 .multiply(perMillion == null ? BigDecimal.ZERO : perMillion);
     }
 
-    private String requestKey(String step, LlmContext context, String model, String variant) {
+    private static String requestKey(String step, LlmContext context, String model,
+                                     String variant, String promptVersion) {
         return LlmRequestKey.of(step, context.tenantId(), context.inputHash(), model,
-                prompts.version(), context.draftVersion(), variant);
+                promptVersion, context.draftVersion(), variant);
     }
 
     private static String step(LlmContext context) {
@@ -378,13 +385,24 @@ public final class OpenAiCompatibleLlmGateway implements LlmGateway {
             throw new LlmContractViolation("неизвестный тип заметки: " + typeValue);
         }
         String topic = requiredText(root, "topic");
+        // file_name необязателен: его отсутствие — законный фолбэк на транслит заголовка.
         return new NoteDraft(
                 title,
                 type,
                 topic,
                 summary(requiredText(root, "summary")),
                 requiredText(root, "body_md"),
-                requiredConfidence(root, "confidence"));
+                requiredConfidence(root, "confidence"),
+                optionalText(root, "file_name"));
+    }
+
+    private static String optionalText(JsonNode node, String field) {
+        JsonNode value = node.path(field);
+        if (!value.isTextual()) {
+            return null;
+        }
+        String text = value.asString().trim();
+        return text.isEmpty() ? null : text;
     }
 
     private static String summary(String raw) {

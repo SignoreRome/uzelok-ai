@@ -30,6 +30,56 @@ class FileNamePolicyTest {
     }
 
     @Test
+    void sanitizesEnglishCandidateIntoTitleCase() {
+        assertThat(policy.sanitize("Two Pointers", "Метод двух указателей"))
+                .isEqualTo("Two_Pointers");
+        assertThat(policy.sanitize("  two-pointers.v2  ", "fallback"))
+                .isEqualTo("Two_Pointers_V2");
+    }
+
+    @Test
+    void sanitizeFallsBackToTransliteratedTitleForCyrillic() {
+        assertThat(policy.sanitize("Метод двух указателей", "Метод двух указателей"))
+                .isEqualTo("Metod_Dvukh_Ukazateley");
+    }
+
+    @Test
+    void sanitizeStripsKnownMarkdownExtension() {
+        assertThat(policy.sanitize("Two_Pointers.md", "fallback")).isEqualTo("Two_Pointers");
+        assertThat(policy.sanitize("Two_Pointers.MarkDown", "fallback"))
+                .isEqualTo("Two_Pointers");
+    }
+
+    @Test
+    void sanitizeFallsBackForMixedAlphabet() {
+        assertThat(policy.sanitize("Метод two pointers", "Метод двух указателей"))
+                .isEqualTo("Metod_Dvukh_Ukazateley");
+    }
+
+    @Test
+    void sanitizeFallsBackForEmptyOrSpecialOnlyCandidate() {
+        assertThat(policy.sanitize("", "Два указателя")).isEqualTo("Dva_Ukazatelya");
+        assertThat(policy.sanitize(null, "Два указателя")).isEqualTo("Dva_Ukazatelya");
+        assertThat(policy.sanitize("!!! ---", "Два указателя")).isEqualTo("Dva_Ukazatelya");
+    }
+
+    @Test
+    void sanitizeFallsBackWhenCandidateExceedsLimit() {
+        assertThat(policy.sanitize("Word_".repeat(20), "Two Pointers"))
+                .isEqualTo("Two_Pointers");
+    }
+
+    @Test
+    void sanitizeTruncatesLongFallbackWithoutDanglingUnderscore() {
+        String name = policy.sanitize("Word_".repeat(20),
+                "Очень длинное название темы ".repeat(10));
+
+        assertThat(name.length()).isLessThanOrEqualTo(60);
+        assertThat(name).doesNotEndWith("_");
+        assertThat(policy.isValid(name)).isTrue();
+    }
+
+    @Test
     void truncatesLongNameToLimit() {
         String name = policy.fromTitle("Очень длинное название темы ".repeat(10));
 

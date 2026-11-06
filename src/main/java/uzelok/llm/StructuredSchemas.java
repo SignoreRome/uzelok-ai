@@ -37,6 +37,7 @@ public final class StructuredSchemas {
               "required": ["title", "type", "topic", "summary", "body_md", "confidence"],
               "properties": {
                 "title": {"type": "string"},
+                "file_name": {"type": "string", "maxLength": 60},
                 "type": {"type": "string", "enum": ["concept", "problem", "source_note"]},
                 "topic": {"type": "string"},
                 "summary": {"type": "string", "maxLength": 150},

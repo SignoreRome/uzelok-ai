@@ -20,6 +20,7 @@ import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Stream;
@@ -112,7 +113,7 @@ class DirVaultStore implements KnowledgeStore {
             throws ContractViolation {
         Layout layout = layout(base);
         Path root = Path.of(base.rootPath()).toAbsolutePath().normalize();
-        Set<String> existingNames = uniqueness.existingNames(layout.knowledgeRoot());
+        Map<String, String> canonicalNames = uniqueness.canonicalNames(layout.knowledgeRoot());
         UUID noteId = jobRef != null && !jobRef.isBlank()
                 ? UUID.nameUUIDFromBytes(
                         ("uzelok-note:" + jobRef).getBytes(StandardCharsets.UTF_8))
@@ -120,7 +121,7 @@ class DirVaultStore implements KnowledgeStore {
         LocalDate today = LocalDate.now(clock);
 
         RenderedNote rendered = renderer.render(
-                layout.taxonomy(), base, noteId, jobRef, draft, forceInbox, today, existingNames);
+                layout.taxonomy(), base, noteId, jobRef, draft, forceInbox, today, canonicalNames);
         Path target = resolveTarget(root, layout.knowledgeRoot(), rendered.relPath());
 
         Set<String> warnings = new LinkedHashSet<>(layout.warnings());

@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.nio.file.Path;
 import java.time.LocalDate;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -80,6 +81,33 @@ class NoteRendererTest {
                 .isLessThan(frontmatter.indexOf("created:"))
                 .isLessThan(frontmatter.indexOf("updated:"))
                 .isLessThan(frontmatter.indexOf("summary:"));
+    }
+
+    @Test
+    void usesTranslatedFileNameFromDraft() {
+        NoteDraft draft = new NoteDraft("Метод двух указателей (Two Pointers)",
+                NoteType.concept, "two_pointers", "Метод двух указателей", "## Тело", 0.9,
+                "Two_Pointers");
+
+        RenderedNote note = renderer.render(taxonomy, base, NOTE_ID, JOB_REF, draft,
+                false, TODAY, Set.of());
+
+        assertThat(note.relPath())
+                .isEqualTo("40_Knowledge/Algorithms/Two_Pointers/Two_Pointers.md");
+        assertThat(note.fileName()).isEqualTo("Two_Pointers.md");
+    }
+
+    @Test
+    void fallsBackToTransliteratedTitleWhenDraftFileNameIsMissing() {
+        NoteDraft draft = new NoteDraft("Метод двух указателей", NoteType.concept,
+                "two_pointers", "Метод двух указателей", "## Тело", 0.9, null);
+
+        RenderedNote note = renderer.render(taxonomy, base, NOTE_ID, JOB_REF, draft,
+                false, TODAY, Set.of());
+
+        assertThat(note.relPath())
+                .isEqualTo("40_Knowledge/Algorithms/Two_Pointers/Metod_Dvukh_Ukazateley.md");
+        assertThat(note.fileName()).isEqualTo("Metod_Dvukh_Ukazateley.md");
     }
 
     @Test
@@ -199,6 +227,47 @@ class NoteRendererTest {
                 "Ещё [[Two_Pointers]]");
         assertThat(note.warnings()).anyMatch(warning ->
                 warning.contains("[[Missing Note]] вырезана: заметки нет"));
+    }
+
+    @Test
+    void canonicalizesWikilinkRegardlessOfCase() {
+        NoteDraft draft = draft("Canonical Link", NoteType.concept, "Two_Pointers", "Ссылка",
+                "См. [[khesh_tablitsa]].");
+
+        RenderedNote note = renderer.render(taxonomy, base, NOTE_ID, JOB_REF, draft,
+                false, TODAY, Map.of("khesh_tablitsa", "Khesh_Tablitsa"));
+
+        assertThat(note.markdown()).contains("См. [[Khesh_Tablitsa]].");
+        assertThat(note.markdown()).doesNotContain("[[khesh_tablitsa]]");
+        assertThat(note.warnings()).noneMatch(warning ->
+                warning.contains("khesh_tablitsa"));
+    }
+
+    @Test
+    void removesUnknownWikilinkWhenCanonicalNamesProvided() {
+        NoteDraft draft = draft("Unknown Canonical", NoteType.concept, "Two_Pointers", "Ссылка",
+                "[[missing_note]]");
+
+        RenderedNote note = renderer.render(taxonomy, base, NOTE_ID, JOB_REF, draft,
+                false, TODAY, Map.of("known_note", "Known_Note"));
+
+        assertThat(note.markdown()).contains("missing_note");
+        assertThat(note.markdown()).doesNotContain("[[missing_note]]");
+        assertThat(note.warnings()).anyMatch(warning ->
+                warning.contains("[[missing_note]] вырезана: заметки нет"));
+    }
+
+    @Test
+    void canonicalizesWikilinkTargetAndKeepsDisplayPart() {
+        NoteDraft draft = draft("Canonical Display", NoteType.concept, "Two_Pointers", "Ссылка",
+                "[[khesh_tablitsa|хеш]]");
+
+        RenderedNote note = renderer.render(taxonomy, base, NOTE_ID, JOB_REF, draft,
+                false, TODAY, Map.of("khesh_tablitsa", "Khesh_Tablitsa"));
+
+        assertThat(note.markdown()).contains("[[Khesh_Tablitsa|хеш]]");
+        assertThat(note.warnings()).noneMatch(warning ->
+                warning.contains("khesh_tablitsa"));
     }
 
     @Test

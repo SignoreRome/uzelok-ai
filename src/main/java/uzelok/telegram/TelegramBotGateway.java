@@ -11,6 +11,9 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.telegram.telegrambots.meta.api.methods.AnswerCallbackQuery;
 import org.telegram.telegrambots.meta.api.methods.send.SendDocument;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
 import org.telegram.telegrambots.meta.api.methods.updatingmessages.EditMessageText;
@@ -25,6 +28,7 @@ import uzelok.domain.port.TelegramGateway;
 
 public final class TelegramBotGateway implements TelegramGateway {
 
+    private static final Logger log = LoggerFactory.getLogger(TelegramBotGateway.class);
     private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(10);
     private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(120);
 
@@ -73,7 +77,25 @@ public final class TelegramBotGateway implements TelegramGateway {
         try {
             client.execute(edit);
         } catch (org.telegram.telegrambots.meta.exceptions.TelegramApiException exception) {
+            if (isNotModified(exception)) {
+                log.debug("сообщение не изменилось chat_id={} message_id={}", chatId, messageId);
+                return;
+            }
             throw new TelegramDeliveryException("не удалось изменить сообщение в Telegram", exception);
+        }
+    }
+
+    @Override
+    public void answerCallback(String callbackId, String text) {
+        AnswerCallbackQuery answer = AnswerCallbackQuery.builder()
+                .callbackQueryId(callbackId)
+                .text(text)
+                .build();
+        try {
+            client.execute(answer);
+        } catch (org.telegram.telegrambots.meta.exceptions.TelegramApiException exception) {
+            log.warn("не удалось ответить на callback query_id={} exception={}",
+                    callbackId, exception.getClass().getSimpleName());
         }
     }
 
@@ -141,6 +163,12 @@ public final class TelegramBotGateway implements TelegramGateway {
         } catch (IOException exception) {
             throw new TelegramDeliveryException("не удалось скачать файл из Telegram");
         }
+    }
+
+    private static boolean isNotModified(
+            org.telegram.telegrambots.meta.exceptions.TelegramApiException exception) {
+        String message = exception.getMessage();
+        return message != null && message.contains("message is not modified");
     }
 
     private static byte[] readLimited(InputStream body, long maxBytes) throws IOException {

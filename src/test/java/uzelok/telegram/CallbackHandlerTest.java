@@ -7,6 +7,8 @@ import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import uzelok.domain.model.ActionOutcome;
 import uzelok.domain.model.ChatAccess;
 import uzelok.domain.model.PendingAction;
@@ -58,6 +60,9 @@ class CallbackHandlerTest {
 
         assertThat(audit.actions()).containsExactly("auth_denied");
         assertThat(audit.records().get(0).detail()).containsEntry("reason", "unknown_chat");
+        assertThat(telegram.answeredCallbacks()).containsExactly(
+                new InMemoryTelegramGateway.AnsweredCallback("callback-1",
+                        new Messages().text("access.unknown_chat")));
     }
 
     @Test
@@ -69,6 +74,9 @@ class CallbackHandlerTest {
         assertThat(audit.records().get(0).detail()).containsEntry("reason", "token_invalid");
         assertThat(handled).hasValue(0);
         assertThat(telegram.sent()).isEmpty();
+        assertThat(telegram.answeredCallbacks()).containsExactly(
+                new InMemoryTelegramGateway.AnsweredCallback("callback-2",
+                        new Messages().text("action.ignored")));
     }
 
     @Test
@@ -79,6 +87,43 @@ class CallbackHandlerTest {
         assertThat(audit.actions()).containsExactly("auth_denied");
         assertThat(audit.records().get(0).detail()).containsEntry("reason", "user_mismatch");
         assertThat(handled).hasValue(0);
+        assertThat(telegram.answeredCallbacks()).containsExactly(
+                new InMemoryTelegramGateway.AnsweredCallback("callback-3",
+                        new Messages().text("access.denied")));
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = PendingActionType.class, names = {"SAVE", "REGENERATE"})
+    void validActionAnswersCallbackOnce(PendingActionType type) {
+        String token = "c".repeat(32);
+        actions.create(new PendingAction(token, UUID.randomUUID(), TENANT_ID,
+                type, CHAT_ID, 500L, NOW.plusSeconds(3600), null));
+
+        handler.handle(TelegramUpdates.callback(7, CHAT_ID, 500, FROM_ID, "act:" + token)
+                .getCallbackQuery());
+
+        assertThat(handled).hasValue(1);
+        assertThat(telegram.answeredCallbacks()).containsExactly(
+                new InMemoryTelegramGateway.AnsweredCallback("callback-7", ""));
+    }
+
+    @Test
+    void ignoredOutcomeRepliesWithStaleActionMessage() {
+        String token = "b".repeat(32);
+        actions.create(new PendingAction(token, UUID.randomUUID(), TENANT_ID,
+                PendingActionType.REGENERATE, CHAT_ID, 500L, NOW.plusSeconds(3600), null));
+        CallbackHandler ignoring = new CallbackHandler(access, actions,
+                action -> ActionOutcome.ignored(), new StubOnboardingHandler(), telegram,
+                new Messages(), audit, new MutableClock(NOW));
+
+        ignoring.handle(TelegramUpdates.callback(6, CHAT_ID, 500, FROM_ID, "act:" + token)
+                .getCallbackQuery());
+
+        assertThat(handled).hasValue(0);
+        assertThat(telegram.answeredCallbacks()).containsExactly(
+                new InMemoryTelegramGateway.AnsweredCallback("callback-6", ""));
+        assertThat(telegram.lastSent().orElseThrow().text())
+                .isEqualTo(new Messages().text("action.ignored"));
     }
 
     @Test
@@ -96,5 +141,9 @@ class CallbackHandlerTest {
         assertThat(audit.actions()).containsExactly("callback_handled", "callback_rejected");
         assertThat(audit.records().get(0).detail()).containsEntry("type", "SAVE");
         assertThat(telegram.lastSent().orElseThrow().text()).isEqualTo("Выполнено.");
+        assertThat(telegram.answeredCallbacks()).containsExactly(
+                new InMemoryTelegramGateway.AnsweredCallback("callback-4", ""),
+                new InMemoryTelegramGateway.AnsweredCallback("callback-5",
+                        new Messages().text("action.ignored")));
     }
 }

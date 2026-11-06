@@ -79,6 +79,7 @@ class OpenAiCompatibleLlmGatewayTest {
                                 new BigDecimal("0.10"), new BigDecimal("0.20"),
                                 new BigDecimal("0.01"))),
                 "v1",
+                Map.of(),
                 new BigDecimal("2.00"),
                 10,
                 "");
@@ -323,8 +324,44 @@ class OpenAiCompatibleLlmGatewayTest {
 
         assertThat(draft.title()).isEqualTo("Заметка");
         assertThat(draft.topic()).isEqualTo("two_pointers");
+        assertThat(draft.fileName()).isNull();
         assertThat(calls.successes()).hasSize(1);
         assertThat(calls.successes().getFirst().step()).isEqualTo("DRAFT");
+    }
+
+    @Test
+    void draftReadsTrimmedFileName() throws IOException {
+        server.stop(0);
+        String draftJson = """
+                {"title":"Заметка","file_name":"  Two_Pointers  ","type":"concept",
+                 "topic":"two_pointers","summary":"кратко","body_md":"## Тело",
+                 "confidence":0.8}
+                """;
+        server = startServer(success(draftJson, 5, 6));
+        gateway = gatewayWith(properties);
+
+        NoteDraft draft = gateway.draft(
+                new LlmContext(tenantId, jobId, "DRAFT", "file-name-hash", 1),
+                extraction(), taxonomy(), Set.of());
+
+        assertThat(draft.fileName()).isEqualTo("Two_Pointers");
+    }
+
+    @Test
+    void draftWithoutFileNameParsesAsNull() throws IOException {
+        server.stop(0);
+        String draftJson = """
+                {"title":"Заметка","type":"concept","topic":"two_pointers",
+                 "summary":"кратко","body_md":"## Тело","confidence":0.8}
+                """;
+        server = startServer(success(draftJson, 5, 6));
+        gateway = gatewayWith(properties);
+
+        NoteDraft draft = gateway.draft(
+                new LlmContext(tenantId, jobId, "DRAFT", "no-file-name-hash", 1),
+                extraction(), taxonomy(), Set.of());
+
+        assertThat(draft.fileName()).isNull();
     }
 
     private OpenAiCompatibleLlmGateway gatewayWith(UzelokProperties.Llm configured) {
@@ -357,6 +394,7 @@ class OpenAiCompatibleLlmGatewayTest {
                 properties.steps(),
                 properties.pricing(),
                 properties.promptVersion(),
+                properties.promptVersions(),
                 properties.dailyBudgetUsd(),
                 properties.timeoutSeconds(),
                 properties.proxyUrl());

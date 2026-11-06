@@ -19,6 +19,11 @@ public final class UnavailableTelegramGateway implements TelegramGateway {
     }
 
     @Override
+    public void answerCallback(String callbackId, String text) {
+        throw new TelegramDeliveryException(MESSAGE);
+    }
+
+    @Override
     public byte[] download(String fileId, long maxBytes) {
         throw new TelegramDeliveryException(MESSAGE);
     }

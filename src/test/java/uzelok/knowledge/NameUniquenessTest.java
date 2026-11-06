@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Map;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -42,6 +43,23 @@ class NameUniquenessTest {
                 "hidden",
                 "trashed",
                 "plain");
+    }
+
+    @Test
+    void canonicalNamesKeepActualCaseAndMapLowercaseKeys() throws IOException {
+        Path knowledge = root.resolve("40_Knowledge");
+
+        write(knowledge.resolve("Algorithms/Khesh_Tablitsa.md"));
+        write(knowledge.resolve("Algorithms/Otsenka_Vychislitelnoy_Slozhnosti_Big_O.md"));
+        write(knowledge.resolve("_meta/Ignored.md"));
+
+        Map<String, String> canonical = uniqueness.canonicalNames(knowledge);
+
+        assertThat(canonical)
+                .containsEntry("khesh_tablitsa", "Khesh_Tablitsa")
+                .containsEntry("otsenka_vychislitelnoy_slozhnosti_big_o",
+                        "Otsenka_Vychislitelnoy_Slozhnosti_Big_O")
+                .doesNotContainKey("ignored");
     }
 
     @Test

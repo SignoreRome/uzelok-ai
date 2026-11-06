@@ -33,13 +33,29 @@ class TelegramJobNotifierTest {
                 "Короткое описание",
                 "x".repeat(5000),
                 "x".repeat(5000),
-                List.of());
+                List.of(), 0);
 
         notifier.preview(view);
 
         String text = telegram.lastSent().orElseThrow().text();
         assertThat(text.length()).isLessThanOrEqualTo(3800);
         assertThat(text).endsWith("\n…");
+    }
+
+    @Test
+    void regeneratedPreviewMentionsVersion() {
+        InMemoryTelegramGateway telegram = new InMemoryTelegramGateway();
+        TelegramJobNotifier notifier = new TelegramJobNotifier(
+                telegram, new InMemorySourceItemRepository());
+        PreviewView view = new PreviewView(
+                UUID.randomUUID(), 42L, null,
+                "40_Knowledge/Algorithms/Graphs/Test.md", "Graphs", "Короткое описание",
+                "коротко", "коротко", List.of(), 2);
+
+        notifier.preview(view);
+
+        String text = telegram.lastSent().orElseThrow().text();
+        assertThat(text).startsWith("Черновик заметки v3 (перегенерирован).");
     }
 
     @Test
@@ -60,7 +76,7 @@ class TelegramJobNotifierTest {
         TelegramJobNotifier notifier = new TelegramJobNotifier(telegram, source, jobs, actions, clock);
         PreviewView view = new PreviewView(job.id(), 42L, 55L,
                 "40_Knowledge/Algorithms/Graphs/Test.md", "Graphs", "summary", "коротко",
-                "коротко", List.of());
+                "коротко", List.of(), 0);
 
         notifier.preview(view);
 
@@ -93,7 +109,7 @@ class TelegramJobNotifierTest {
         TelegramJobNotifier notifier = new TelegramJobNotifier(telegram, source, jobs, actions, clock);
         PreviewView view = new PreviewView(job.id(), 42L, 55L,
                 "40_Knowledge/Algorithms/Graphs/Test.md", "Graphs", "summary", "коротко",
-                "коротко", List.of());
+                "коротко", List.of(), 0);
 
         notifier.preview(view);
         String oldToken = telegram.edited().getFirst().keyboard().rows().getFirst().getFirst()

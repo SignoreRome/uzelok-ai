@@ -56,7 +56,11 @@ uzelok:
         input-per-million: 0.10
         output-per-million: 0.50
         cache-read-per-million: 0.01
-    prompt-version: v2
+    prompt-version: v3
+    prompt-versions:
+      extract: v2
+      theses: v2
+      draft: v3
     daily-budget-usd: 2.00
     timeout-seconds: 120
     proxy-url: ${UZELOK_LLM_PROXY:}

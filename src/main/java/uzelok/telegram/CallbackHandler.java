@@ -49,6 +49,7 @@ public final class CallbackHandler {
     public void handle(CallbackQuery callback) {
         Long chatId = callback.getMessage() == null ? null : callback.getMessage().getChatId();
         if (chatId == null) {
+            answer(callback, messages.text("action.ignored"));
             audit.record(new AuditRecord(null, null, "callback_rejected", null, null,
                     Map.of("reason", "no_message")));
             return;
@@ -56,6 +57,7 @@ public final class CallbackHandler {
 
         Optional<ChatAccess> found = access.findByChatId(chatId);
         if (found.isEmpty()) {
+            answer(callback, messages.text("access.unknown_chat"));
             audit.record(new AuditRecord(null, chatId, "auth_denied", null, null,
                     Map.of("reason", "unknown_chat")));
             return;
@@ -63,6 +65,7 @@ public final class CallbackHandler {
 
         ChatAccess chatAccess = found.get();
         if (!chatAccess.allowed()) {
+            answer(callback, messages.text("access.denied"));
             audit.record(new AuditRecord(chatAccess.tenantId(), chatId, "auth_denied", null, null,
                     Map.of("reason", "not_allowed")));
             return;
@@ -70,6 +73,7 @@ public final class CallbackHandler {
 
         Long fromId = callback.getFrom() == null ? null : callback.getFrom().getId();
         if (fromId == null || fromId != chatAccess.telegramUserId()) {
+            answer(callback, messages.text("access.denied"));
             audit.record(new AuditRecord(chatAccess.tenantId(), chatId, "auth_denied", null, null,
                     Map.of("reason", "user_mismatch")));
             return;
@@ -77,12 +81,14 @@ public final class CallbackHandler {
 
         String data = callback.getData();
         if (data != null && data.startsWith(ONBOARDING_PREFIX)) {
-            handleOnboarding(chatId, chatAccess.tenantId(), data.substring(ONBOARDING_PREFIX.length()));
+            handleOnboarding(callback, chatId, chatAccess.tenantId(),
+                    data.substring(ONBOARDING_PREFIX.length()));
             return;
         }
 
         String token = token(data);
         if (token == null) {
+            answer(callback, messages.text("action.ignored"));
             audit.record(new AuditRecord(chatAccess.tenantId(), chatId, "callback_rejected",
                     null, null, Map.of("reason", "token_invalid")));
             return;
@@ -91,14 +97,17 @@ public final class CallbackHandler {
         Instant now = clock.instant();
         Optional<PendingAction> consumed = actions.consume(token, chatId, now);
         if (consumed.isEmpty()) {
+            answer(callback, messages.text("action.ignored"));
             audit.record(new AuditRecord(chatAccess.tenantId(), chatId, "callback_rejected",
                     null, null, Map.of("reason", "token_invalid")));
             return;
         }
 
+        answer(callback, "");
         PendingAction action = consumed.get();
         ActionOutcome outcome = handler.handle(action);
         if (!outcome.handled()) {
+            telegram.sendMessage(chatId, messages.text("action.ignored"), InlineKeyboard.empty());
             return;
         }
         if (outcome.userMessage() != null) {
@@ -109,23 +118,31 @@ public final class CallbackHandler {
                 Map.of("type", action.type().name())));
     }
 
-    private void handleOnboarding(long chatId, java.util.UUID tenantId, String action) {
-        OnboardingResult result = switch (action) {
-            case "create" -> onboarding.createInternal(chatId, tenantId);
-            case "connect" -> onboarding.expectPath(chatId, tenantId);
-            default -> null;
-        };
-        if (result == null) {
+    private void handleOnboarding(CallbackQuery callback, long chatId, java.util.UUID tenantId,
+                                  String action) {
+        if (!"create".equals(action) && !"connect".equals(action)) {
+            answer(callback, messages.text("action.ignored"));
             audit.record(new AuditRecord(tenantId, chatId, "callback_rejected", null, null,
                     Map.of("reason", "onboarding_action")));
             return;
         }
+        answer(callback, "");
+        OnboardingResult result = "create".equals(action)
+                ? onboarding.createInternal(chatId, tenantId)
+                : onboarding.expectPath(chatId, tenantId);
         InlineKeyboard keyboard = "base.create_failed".equals(result.messageKey())
                 || "base.connect_failed".equals(result.messageKey())
                 ? Keyboards.onboarding(messages)
                 : InlineKeyboard.empty();
         telegram.sendMessage(chatId, messages.text(result.messageKey(),
                 result.args().toArray()), keyboard);
+    }
+
+    private void answer(CallbackQuery callback, String text) {
+        String callbackId = callback.getId();
+        if (callbackId != null) {
+            telegram.answerCallback(callbackId, text);
+        }
     }
 
     private static String token(String data) {
