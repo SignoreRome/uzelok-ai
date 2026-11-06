@@ -21,6 +21,9 @@ public final class InMemoryTelegramGateway implements TelegramGateway {
     public record EditedMessage(long chatId, long messageId, String text, InlineKeyboard keyboard) {
     }
 
+    public record AnsweredCallback(String callbackId, String text) {
+    }
+
     public record SentDocument(long chatId, String fileName, byte[] content, String caption) {
     }
 
@@ -29,6 +32,7 @@ public final class InMemoryTelegramGateway implements TelegramGateway {
 
     private final List<SentMessage> sent = new ArrayList<>();
     private final List<EditedMessage> edited = new ArrayList<>();
+    private final List<AnsweredCallback> answeredCallbacks = new ArrayList<>();
     private final List<SentDocument> documents = new ArrayList<>();
     private final List<SentFile> files = new ArrayList<>();
     private final Map<String, byte[]> stored = new HashMap<>();
@@ -55,6 +59,11 @@ public final class InMemoryTelegramGateway implements TelegramGateway {
     @Override
     public synchronized void editMessage(long chatId, long messageId, String text, InlineKeyboard keyboard) {
         edited.add(new EditedMessage(chatId, messageId, text, keyboard));
+    }
+
+    @Override
+    public synchronized void answerCallback(String callbackId, String text) {
+        answeredCallbacks.add(new AnsweredCallback(callbackId, text));
     }
 
     @Override
@@ -99,6 +108,10 @@ public final class InMemoryTelegramGateway implements TelegramGateway {
 
     public synchronized List<EditedMessage> edited() {
         return List.copyOf(edited);
+    }
+
+    public synchronized List<AnsweredCallback> answeredCallbacks() {
+        return List.copyOf(answeredCallbacks);
     }
 
     public synchronized List<SentDocument> documents() {

@@ -12,6 +12,8 @@ public interface TelegramGateway {
 
     void editMessage(long chatId, long messageId, String text, InlineKeyboard keyboard);
 
+    void answerCallback(String callbackId, String text);
+
     byte[] download(String fileId, long maxBytes);
 
     /**
