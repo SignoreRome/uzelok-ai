@@ -131,7 +131,12 @@ public final class TelegramJobNotifier implements JobNotifier {
 
     private static String header(PreviewView view) {
         StringBuilder header = new StringBuilder();
-        header.append("Черновик заметки готов.\n");
+        if (view.draftVersion() > 0) {
+            header.append("Черновик заметки v").append(view.draftVersion() + 1)
+                    .append(" (перегенерирован).\n");
+        } else {
+            header.append("Черновик заметки готов.\n");
+        }
         header.append("Путь: ").append(view.relPath()).append('\n');
         if (view.topic() != null && !view.topic().isBlank()) {
             header.append("Тема: ").append(view.topic()).append('\n');

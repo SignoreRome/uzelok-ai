@@ -76,7 +76,8 @@ public final class RenderStep {
                 draft.summary(),
                 excerpt(prepared.markdown()),
                 prepared.markdown(),
-                prepared.warnings());
+                prepared.warnings(),
+                job.draftVersion());
         notifier.preview(view);
         return view;
     }
