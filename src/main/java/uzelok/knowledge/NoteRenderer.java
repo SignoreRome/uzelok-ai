@@ -55,6 +55,22 @@ public final class NoteRenderer {
             boolean forceInbox,
             LocalDate today,
             Set<String> existingNames) {
+        Map<String, String> knownNames = new LinkedHashMap<>();
+        for (String name : existingNames) {
+            knownNames.put(name.toLowerCase(Locale.ROOT), null);
+        }
+        return render(taxonomy, base, noteId, jobRef, draft, forceInbox, today, knownNames);
+    }
+
+    public RenderedNote render(
+            Taxonomy taxonomy,
+            KnowledgeBase base,
+            UUID noteId,
+            String jobRef,
+            NoteDraft draft,
+            boolean forceInbox,
+            LocalDate today,
+            Map<String, String> canonicalNames) {
         if (draft.type() == null) {
             throw new ContractViolation("тип заметки не задан");
         }
@@ -92,7 +108,7 @@ public final class NoteRenderer {
 
         String baseName = names.sanitize(draft.fileName(), draft.title());
         String name = baseName;
-        if (existingNames.contains(baseName.toLowerCase(Locale.ROOT))) {
+        if (canonicalNames.containsKey(baseName.toLowerCase(Locale.ROOT))) {
             name = names.withSuffix(baseName, collisionSuffix(jobRef, noteId));
             if (free) {
                 warnings.add("имя занято, сохраню как " + name);
@@ -103,7 +119,7 @@ public final class NoteRenderer {
         }
 
         String body = normalizeBody(sanitized.body());
-        body = resolveWikilinks(body, existingNames, warnings);
+        body = resolveWikilinks(body, canonicalNames, warnings);
 
         String relPath;
         if (free) {
@@ -215,16 +231,16 @@ public final class NoteRenderer {
     }
 
     private static String resolveWikilinks(
-            String body, Set<String> existingNames, Set<String> warnings) {
+            String body, Map<String, String> canonicalNames, Set<String> warnings) {
         List<MarkdownCode.Range> ranges = MarkdownCode.codeAndMathRanges(body);
         StringBuilder result = new StringBuilder(body.length());
         int position = 0;
         for (MarkdownCode.Range range : ranges) {
-            resolveWikilinksIn(body, position, range.start(), result, existingNames, warnings);
+            resolveWikilinksIn(body, position, range.start(), result, canonicalNames, warnings);
             result.append(body, range.start(), range.end());
             position = range.end();
         }
-        resolveWikilinksIn(body, position, body.length(), result, existingNames, warnings);
+        resolveWikilinksIn(body, position, body.length(), result, canonicalNames, warnings);
         return result.toString();
     }
 
@@ -233,7 +249,7 @@ public final class NoteRenderer {
             int from,
             int to,
             StringBuilder result,
-            Set<String> existingNames,
+            Map<String, String> canonicalNames,
             Set<String> warnings) {
         Matcher matcher = WIKILINK.matcher(body.substring(from, to));
         StringBuilder segment = new StringBuilder();
@@ -243,14 +259,22 @@ public final class NoteRenderer {
             String target = pipe >= 0 ? inner.substring(0, pipe).trim() : inner.trim();
             String display = pipe >= 0 ? inner.substring(pipe + 1).trim() : target;
             String lookup = target;
+            String suffix = "";
             int hash = lookup.indexOf('#');
             if (hash >= 0) {
+                suffix = lookup.substring(hash);
                 lookup = lookup.substring(0, hash).trim();
             }
             if (lookup.toLowerCase(Locale.ROOT).endsWith(".md")) {
+                suffix = lookup.substring(lookup.length() - 3) + suffix;
                 lookup = lookup.substring(0, lookup.length() - 3);
             }
-            if (existingNames.contains(lookup.toLowerCase(Locale.ROOT))) {
+            String canonical = canonicalNames.get(lookup.toLowerCase(Locale.ROOT));
+            if (canonical != null) {
+                String replacement = canonical + suffix + (pipe >= 0 ? inner.substring(pipe) : "");
+                matcher.appendReplacement(segment,
+                        Matcher.quoteReplacement("[[" + replacement + "]]"));
+            } else if (canonicalNames.containsKey(lookup.toLowerCase(Locale.ROOT))) {
                 matcher.appendReplacement(segment, Matcher.quoteReplacement(matcher.group()));
             } else {
                 warnings.add("ссылка [[" + target + "]] вырезана: заметки нет");

@@ -82,6 +82,23 @@ class CallbackHandlerTest {
     }
 
     @Test
+    void ignoredOutcomeRepliesWithStaleActionMessage() {
+        String token = "b".repeat(32);
+        actions.create(new PendingAction(token, UUID.randomUUID(), TENANT_ID,
+                PendingActionType.REGENERATE, CHAT_ID, 500L, NOW.plusSeconds(3600), null));
+        CallbackHandler ignoring = new CallbackHandler(access, actions,
+                action -> ActionOutcome.ignored(), new StubOnboardingHandler(), telegram,
+                new Messages(), audit, new MutableClock(NOW));
+
+        ignoring.handle(TelegramUpdates.callback(6, CHAT_ID, 500, FROM_ID, "act:" + token)
+                .getCallbackQuery());
+
+        assertThat(handled).hasValue(0);
+        assertThat(telegram.lastSent().orElseThrow().text())
+                .isEqualTo(new Messages().text("action.ignored"));
+    }
+
+    @Test
     void validTokenIsHandledOnceAndRepeatedClickIsIgnored() {
         String token = "a".repeat(32);
         actions.create(new PendingAction(token, UUID.randomUUID(), TENANT_ID,

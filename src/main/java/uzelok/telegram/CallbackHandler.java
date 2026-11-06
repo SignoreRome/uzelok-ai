@@ -99,6 +99,7 @@ public final class CallbackHandler {
         PendingAction action = consumed.get();
         ActionOutcome outcome = handler.handle(action);
         if (!outcome.handled()) {
+            telegram.sendMessage(chatId, messages.text("action.ignored"), InlineKeyboard.empty());
             return;
         }
         if (outcome.userMessage() != null) {

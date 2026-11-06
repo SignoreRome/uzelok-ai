@@ -119,9 +119,11 @@ public class JdbcJobRepository implements JobRepository {
 
     private static final String START_REGENERATION = """
             UPDATE processing_job
-            SET draft_version = draft_version + 1, status = 'DRAFTING', lease_until = NULL,
-                updated_at = now()
-            WHERE id = :jobId AND status = 'AWAITING_CONFIRM'
+            SET draft_version = draft_version + 1, status = 'DRAFTING',
+                failed_stage = NULL, error_code = NULL, error_message = NULL,
+                attempt_count = CASE WHEN status = 'FAILED' THEN 0 ELSE attempt_count END,
+                lease_until = NULL, updated_at = now()
+            WHERE id = :jobId AND status IN ('AWAITING_CONFIRM', 'FAILED')
             """;
 
     private static final String COUNT_FOR_TENANT_SINCE = """

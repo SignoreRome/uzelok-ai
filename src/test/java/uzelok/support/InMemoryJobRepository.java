@@ -101,22 +101,25 @@ public final class InMemoryJobRepository implements JobRepository {
     @Override
     public synchronized boolean startRegeneration(UUID jobId) {
         ProcessingJob existing = jobs.get(jobId);
-        if (existing == null || existing.status() != JobStatus.AWAITING_CONFIRM) {
+        if (existing == null
+                || (existing.status() != JobStatus.AWAITING_CONFIRM
+                        && existing.status() != JobStatus.FAILED)) {
             return false;
         }
+        boolean failed = existing.status() == JobStatus.FAILED;
         jobs.put(jobId, new ProcessingJob(
                 existing.id(),
                 existing.tenantId(),
                 existing.sourceItemId(),
                 existing.knowledgeBaseId(),
                 JobStatus.DRAFTING,
-                existing.failedStage(),
-                existing.attemptCount(),
+                failed ? null : existing.failedStage(),
+                failed ? 0 : existing.attemptCount(),
                 existing.nextRunAt(),
                 null,
                 existing.statusMessageId(),
-                existing.errorCode(),
-                existing.errorMessage(),
+                failed ? null : existing.errorCode(),
+                failed ? null : existing.errorMessage(),
                 existing.confirmedAt(),
                 existing.createdAt(),
                 Instant.now(),

@@ -6,6 +6,7 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
@@ -147,6 +148,32 @@ class JdbcPipelineIT {
         assertThat(jdbc.queryForObject(
                 "SELECT error_message FROM processing_job WHERE id = ?", String.class, retryJob))
                 .isEqualTo("плохой ответ");
+    }
+
+    @Test
+    void startRegenerationFromFailedClearsErrorsAndResetsAttempts() {
+        UUID tenantId = newTenant();
+        UUID jobId = newJob(tenantId, newKnowledgeBase(tenantId), "FAILED");
+        jdbc.update("UPDATE processing_job SET failed_stage = 'WRITING', "
+                        + "error_code = 'contract_violation', error_message = 'плохой ответ', "
+                        + "attempt_count = 2, lease_until = now() + interval '5 minutes', "
+                        + "draft_version = 3 WHERE id = ?",
+                jobId);
+        JdbcJobRepository repository = new JdbcJobRepository(named);
+
+        assertThat(repository.startRegeneration(jobId)).isTrue();
+
+        Map<String, Object> row = jdbc.queryForMap(
+                "SELECT status, failed_stage, error_code, error_message, attempt_count, "
+                        + "lease_until, draft_version FROM processing_job WHERE id = ?",
+                jobId);
+        assertThat(row.get("status")).isEqualTo("DRAFTING");
+        assertThat(row.get("failed_stage")).isNull();
+        assertThat(row.get("error_code")).isNull();
+        assertThat(row.get("error_message")).isNull();
+        assertThat(((Number) row.get("attempt_count")).intValue()).isZero();
+        assertThat(row.get("lease_until")).isNull();
+        assertThat(((Number) row.get("draft_version")).intValue()).isEqualTo(4);
     }
 
     @Test

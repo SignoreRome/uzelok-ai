@@ -82,6 +82,35 @@ class ActionServiceTest {
     }
 
     @Test
+    void regenerateFailedJobReturnsToDraftingAndClearsErrors() {
+        ProcessingJob job = job(JobStatus.FAILED, "WRITING", 2);
+        jobs.markFailed(job.id(), "WRITING", "contract_violation", "линтер отклонил заметку");
+
+        ActionOutcome outcome = service.handle(action(job, PendingActionType.REGENERATE));
+
+        ProcessingJob updated = jobs.find(job.id()).orElseThrow();
+        assertThat(updated.status()).isEqualTo(JobStatus.DRAFTING);
+        assertThat(updated.failedStage()).isNull();
+        assertThat(updated.errorCode()).isNull();
+        assertThat(updated.errorMessage()).isNull();
+        assertThat(updated.attemptCount()).isZero();
+        assertThat(updated.draftVersion()).isEqualTo(1);
+        assertThat(outcome.handled()).isTrue();
+    }
+
+    @Test
+    void regenerateDoneJobIsIgnoredAndKeepsState() {
+        ProcessingJob job = job(JobStatus.DONE, null, 0);
+
+        ActionOutcome outcome = service.handle(action(job, PendingActionType.REGENERATE));
+
+        ProcessingJob updated = jobs.find(job.id()).orElseThrow();
+        assertThat(updated.status()).isEqualTo(JobStatus.DONE);
+        assertThat(updated.draftVersion()).isZero();
+        assertThat(outcome.handled()).isFalse();
+    }
+
+    @Test
     void duplicateRegenerateClonesMaterialAndCreatesNewJob() {
         ProcessingJob job = job(JobStatus.AWAITING_CONFIRM, null, 0);
         SourceItem original = source.findById(job.sourceItemId()).orElseThrow();
