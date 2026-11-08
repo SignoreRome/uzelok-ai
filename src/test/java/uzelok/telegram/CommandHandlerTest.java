@@ -4,10 +4,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import uzelok.domain.model.BotCommandEntry;
 import uzelok.domain.model.ChatAccess;
 import uzelok.domain.model.JobStatus;
 import uzelok.domain.model.LlmCallRecord;
@@ -144,5 +146,19 @@ class CommandHandlerTest {
     void plainTextIsNotACommand() {
         assertThat(handler.handle(CHAT_ID, "просто текст")).isFalse();
         assertThat(telegram.sent()).isEmpty();
+    }
+
+    @Test
+    void menuListsAllCommandsInOrder() {
+        List<BotCommandEntry> menu = handler.menu();
+
+        assertThat(menu).extracting(BotCommandEntry::command)
+                .containsExactly("start", "help", "stats", "ai_mode", "cancel", "export");
+        Messages messages = new Messages();
+        for (BotCommandEntry entry : menu) {
+            assertThat(entry.description())
+                    .isNotBlank()
+                    .isEqualTo(messages.text("command.menu." + entry.command()));
+        }
     }
 }

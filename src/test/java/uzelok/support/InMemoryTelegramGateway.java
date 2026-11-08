@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import uzelok.domain.exception.AttachmentTooLarge;
+import uzelok.domain.model.BotCommandEntry;
 import uzelok.domain.model.InlineKeyboard;
 import uzelok.domain.port.TelegramGateway;
 
@@ -35,10 +36,17 @@ public final class InMemoryTelegramGateway implements TelegramGateway {
     private final List<AnsweredCallback> answeredCallbacks = new ArrayList<>();
     private final List<SentDocument> documents = new ArrayList<>();
     private final List<SentFile> files = new ArrayList<>();
+    private final List<List<BotCommandEntry>> commandsCalls = new ArrayList<>();
     private final Map<String, byte[]> stored = new HashMap<>();
     private final List<String> downloadCalls = new ArrayList<>();
     private long nextMessageId = 1000;
     private RuntimeException downloadFailure;
+    private RuntimeException sendFailure;
+
+    public synchronized InMemoryTelegramGateway failSend(RuntimeException failure) {
+        this.sendFailure = failure;
+        return this;
+    }
 
     public InMemoryTelegramGateway putFile(String fileId, byte[] bytes) {
         stored.put(fileId, bytes);
@@ -52,6 +60,9 @@ public final class InMemoryTelegramGateway implements TelegramGateway {
 
     @Override
     public synchronized long sendMessage(long chatId, String text, InlineKeyboard keyboard) {
+        if (sendFailure != null) {
+            throw sendFailure;
+        }
         sent.add(new SentMessage(chatId, text, keyboard));
         return nextMessageId++;
     }
@@ -84,6 +95,11 @@ public final class InMemoryTelegramGateway implements TelegramGateway {
         }
         files.add(new SentFile(chatId, fileName, size, caption));
         return nextMessageId++;
+    }
+
+    @Override
+    public synchronized void setCommands(List<BotCommandEntry> commands) {
+        commandsCalls.add(List.copyOf(commands));
     }
 
     @Override
@@ -124,6 +140,10 @@ public final class InMemoryTelegramGateway implements TelegramGateway {
 
     public synchronized List<String> downloadCalls() {
         return List.copyOf(downloadCalls);
+    }
+
+    public synchronized List<List<BotCommandEntry>> commandsCalls() {
+        return List.copyOf(commandsCalls);
     }
 
     public synchronized Optional<SentMessage> lastSent() {

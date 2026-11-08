@@ -53,6 +53,11 @@ public final class WriteStep {
                     : Path.of(base.rootPath()).resolve(note.relPath()).normalize();
             if (target != null && java.nio.file.Files.isRegularFile(target)) {
                 // Шаг повторяется после сбоя уведомления: файл уже на месте, второй раз не пишем.
+                audit.record(new AuditRecord(job.tenantId(), null, "write_skipped", "note",
+                        note.noteId(),
+                        Map.of("reason", "already_written",
+                               "note_id", note.noteId().toString(),
+                               "rel_path", note.relPath() == null ? "" : note.relPath())));
                 return new WriteResult(
                         new WrittenNote(note.noteId(), note.relPath(), note.contentHash(), false),
                         new PreparedNote(note.noteId(), note.relPath(), note.fileName(), "",

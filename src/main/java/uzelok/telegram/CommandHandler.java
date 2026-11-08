@@ -2,11 +2,13 @@ package uzelok.telegram;
 
 import java.math.BigDecimal;
 import java.time.Clock;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import uzelok.domain.model.AuditRecord;
+import uzelok.domain.model.BotCommandEntry;
 import uzelok.domain.model.ChatAccess;
 import uzelok.domain.model.ExportBundle;
 import uzelok.domain.model.ExportPart;
@@ -28,8 +30,9 @@ public final class CommandHandler {
     public record LlmStep(String provider, String model, String fallbackModel) {
     }
 
-    private static final Set<String> COMMANDS =
-            Set.of("start", "help", "stats", "ai_mode", "cancel", "export");
+    private static final List<String> COMMAND_ORDER =
+            List.of("start", "help", "stats", "ai_mode", "cancel", "export");
+    private static final Set<String> COMMANDS = Set.copyOf(COMMAND_ORDER);
 
     private final TelegramGateway telegram;
     private final Messages messages;
@@ -63,6 +66,12 @@ public final class CommandHandler {
     public boolean handles(String text) {
         ParsedCommand parsed = parse(text);
         return parsed != null && COMMANDS.contains(parsed.command());
+    }
+
+    public List<BotCommandEntry> menu() {
+        return COMMAND_ORDER.stream()
+                .map(name -> new BotCommandEntry(name, messages.text("command.menu." + name)))
+                .toList();
     }
 
     public boolean handle(long chatId, String text) {

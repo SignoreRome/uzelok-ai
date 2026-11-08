@@ -1,6 +1,8 @@
 package uzelok.domain.port;
 
 import java.nio.file.Path;
+import java.util.List;
+import uzelok.domain.model.BotCommandEntry;
 import uzelok.domain.model.InlineKeyboard;
 
 public interface TelegramGateway {
@@ -32,4 +34,10 @@ public interface TelegramGateway {
      * @return telegram message_id отправленного сообщения
      */
     long sendDocumentFile(long chatId, String fileName, Path file, String caption);
+
+    /**
+     * Ставит меню команд бота; реализация может не поддерживать (no-op).
+     */
+    default void setCommands(List<BotCommandEntry> commands) {
+    }
 }

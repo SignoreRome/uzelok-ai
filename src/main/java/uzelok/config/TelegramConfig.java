@@ -169,7 +169,9 @@ public class TelegramConfig {
     }
 
     @Bean
-    public TelegramPollerLifecycle telegramPollerLifecycle(TelegramPoller poller) {
-        return new TelegramPollerLifecycle(poller);
+    public TelegramPollerLifecycle telegramPollerLifecycle(TelegramPoller poller,
+                                                           TelegramGateway telegram,
+                                                           CommandHandler commands) {
+        return new TelegramPollerLifecycle(poller, telegram, commands);
     }
 }
