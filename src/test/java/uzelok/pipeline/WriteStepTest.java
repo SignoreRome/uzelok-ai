@@ -143,6 +143,27 @@ class WriteStepTest {
     }
 
     @Test
+    void repeatedRunAuditsWriteSkipped() {
+        ProcessingJob job = job(false);
+        KnowledgeBase diskBase = new KnowledgeBase(base.id(), base.kind(), vault.toString(),
+                base.taxonomyRelPath(), base.inboxRelPath());
+        FakeStore diskStore = new FakeStore();
+        diskStore.root = vault;
+        WriteStep filesystemStep = new WriteStep(artifacts,
+                new FixedKnowledgeBaseRepository(diskBase), diskStore, notes, audit, codec);
+
+        filesystemStep.run(job);
+        filesystemStep.run(job);
+
+        assertThat(audit.actions())
+                .containsExactlyInAnyOrder("note_saved", "write_skipped");
+        assertThat(audit.records()).filteredOn(record -> "write_skipped".equals(record.action()))
+                .singleElement()
+                .satisfies(record -> assertThat(record.detail())
+                        .containsEntry("reason", "already_written"));
+    }
+
+    @Test
     void forceInboxIsPassedToKnowledgeStore() {
         knowledge.relPath = "40_Knowledge/_Inbox/Test.md";
         ProcessingJob job = job(true);

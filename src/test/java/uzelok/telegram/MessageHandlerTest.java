@@ -6,7 +6,6 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.time.Clock;
 import java.time.Instant;
-import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -76,6 +75,7 @@ class MessageHandlerTest {
     private UzelokProperties.Telegram telegramProps;
     private UzelokProperties.Limits limits;
     private Clock clock;
+    private MutableClock mutableClock;
     private MessageHandler handler;
 
     @BeforeEach
@@ -94,7 +94,8 @@ class MessageHandlerTest {
         telegramProps = new UzelokProperties.Telegram(
                 "token", "test_bot", "", 30, 2000, 8000, 15_728_640L, 1_048_576L, 30_000_000L);
         limits = new UzelokProperties.Limits(20, 5, 72);
-        clock = Clock.fixed(Instant.parse("2026-01-15T10:00:00Z"), ZoneOffset.UTC);
+        mutableClock = new MutableClock(Instant.parse("2026-01-15T10:00:00Z"));
+        clock = mutableClock;
         handler = handlerWith(new FixedKnowledgeBaseRepository(knowledgeBase()));
     }
 
@@ -125,12 +126,66 @@ class MessageHandlerTest {
     }
 
     @Test
-    void unknownChatIsSilentlyAudited() {
+    void unknownChatReceivesDeniedReply() {
         handler.handle(TelegramUpdates.text(1, 777L, 500, FROM_ID, "текст"));
 
-        assertThat(telegram.sent()).isEmpty();
+        assertThat(telegram.sent()).hasSize(1);
+        assertThat(telegram.lastSent().orElseThrow().text())
+                .isEqualTo(new Messages().text("access.denied"));
         assertThat(source.size()).isZero();
-        assertThat(audit.actions()).contains("auth_denied");
+        assertThat(jobs.size()).isZero();
+        assertThat(audit.actions()).containsExactly("auth_denied");
+        assertThat(audit.records()).filteredOn(record -> "auth_denied".equals(record.action()))
+                .singleElement()
+                .satisfies(record -> assertThat(record.detail())
+                        .containsEntry("reason", "unknown_chat")
+                        .containsEntry("reply", "sent"));
+    }
+
+    @Test
+    void repeatedMessagesFromUnknownChatAreThrottled() {
+        handler.handle(TelegramUpdates.text(1, 777L, 500, FROM_ID, "первое"));
+        handler.handle(TelegramUpdates.text(2, 777L, 501, FROM_ID, "второе"));
+
+        assertThat(telegram.sent()).hasSize(1);
+        var denied = audit.records().stream()
+                .filter(record -> "auth_denied".equals(record.action()))
+                .toList();
+        assertThat(denied).hasSize(2);
+        assertThat(denied.get(0).detail()).containsEntry("reply", "sent");
+        assertThat(denied.get(1).detail()).containsEntry("reply", "throttled");
+    }
+
+    @Test
+    void unknownChatGetsReplyAgainAfterIntervalExpires() {
+        handler.handle(TelegramUpdates.text(1, 777L, 500, FROM_ID, "первое"));
+
+        mutableClock.setInstant(Instant.parse("2026-01-15T10:10:01Z"));
+        handler.handle(TelegramUpdates.text(2, 777L, 501, FROM_ID, "второе"));
+
+        assertThat(telegram.sent()).hasSize(2);
+        assertThat(audit.records().stream()
+                .filter(record -> "auth_denied".equals(record.action()))
+                .map(record -> record.detail().get("reply")))
+                .containsExactly("sent", "sent");
+    }
+
+    @Test
+    void unknownChatReplyFailureIsAuditedAndRetriedOnNextMessage() {
+        telegram.failSend(new IllegalStateException("нет сети"));
+        handler.handle(TelegramUpdates.text(1, 777L, 500, FROM_ID, "первое"));
+
+        assertThat(telegram.sent()).isEmpty();
+        assertThat(audit.records()).filteredOn(record -> "auth_denied".equals(record.action()))
+                .singleElement()
+                .satisfies(record -> assertThat(record.detail()).containsEntry("reply", "failed"));
+
+        telegram.failSend(null);
+        handler.handle(TelegramUpdates.text(2, 777L, 501, FROM_ID, "второе"));
+
+        assertThat(telegram.sent()).hasSize(1);
+        assertThat(source.size()).isZero();
+        assertThat(jobs.size()).isZero();
     }
 
     @Test
@@ -185,11 +240,10 @@ class MessageHandlerTest {
         handler.handle(TelegramUpdates.photo(1, CHAT_ID, 500, FROM_ID, null, "photo", 100));
 
         assertThat(audit.actions()).contains("ingest_failed");
-        assertThat(audit.records()).anySatisfy(record -> {
-            if ("ingest_failed".equals(record.action())) {
-                assertThat(record.detail()).containsEntry("reason", "TelegramDeliveryException");
-            }
-        });
+        assertThat(audit.records()).filteredOn(record -> "ingest_failed".equals(record.action()))
+                .singleElement()
+                .satisfies(record -> assertThat(record.detail())
+                        .containsEntry("reason", "TelegramDeliveryException"));
         assertThat(telegram.lastSent().orElseThrow().text())
                 .isEqualTo(new Messages().text("attachment.failed"));
         assertThat(jobs.size()).isZero();
@@ -208,12 +262,11 @@ class MessageHandlerTest {
         assertThat(source.size()).isEqualTo(1);
         assertThat(jobs.size()).isEqualTo(1);
         assertThat(audit.actions()).contains("duplicate_material");
-        assertThat(audit.records()).anySatisfy(record -> {
-            if ("duplicate_material".equals(record.action())) {
-                assertThat(record.detail()).containsEntry("existing_note", "Zametka.md");
-                assertThat(record.detail()).containsKey("source_item_id");
-            }
-        });
+        assertThat(audit.records()).filteredOn(record -> "duplicate_material".equals(record.action()))
+                .singleElement()
+                .satisfies(record -> assertThat(record.detail())
+                        .containsEntry("existing_note", "Zametka.md")
+                        .containsKey("source_item_id"));
         assertThat(telegram.lastSent().orElseThrow().text()).contains("Zametka.md");
         assertThat(telegram.lastSent().orElseThrow().keyboard().rows()).isNotEmpty();
     }
@@ -423,11 +476,10 @@ class MessageHandlerTest {
         assertThat(source.size()).isEqualTo(1);
         assertThat(jobs.size()).isEqualTo(1);
         assertThat(audit.actions()).contains("quota_exceeded");
-        assertThat(audit.records()).anySatisfy(record -> {
-            if ("quota_exceeded".equals(record.action())) {
-                assertThat(record.detail()).containsEntry("reason", "jobs_per_day");
-            }
-        });
+        assertThat(audit.records()).filteredOn(record -> "quota_exceeded".equals(record.action()))
+                .singleElement()
+                .satisfies(record -> assertThat(record.detail())
+                        .containsEntry("reason", "jobs_per_day"));
         assertThat(telegram.lastSent().orElseThrow().text())
                 .isEqualTo(new Messages().text("quota.day"));
     }

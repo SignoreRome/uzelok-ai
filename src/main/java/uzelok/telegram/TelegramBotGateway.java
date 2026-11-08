@@ -14,15 +14,18 @@ import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.telegram.telegrambots.meta.api.methods.AnswerCallbackQuery;
+import org.telegram.telegrambots.meta.api.methods.commands.SetMyCommands;
 import org.telegram.telegrambots.meta.api.methods.send.SendDocument;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
 import org.telegram.telegrambots.meta.api.methods.updatingmessages.EditMessageText;
 import org.telegram.telegrambots.meta.api.objects.InputFile;
+import org.telegram.telegrambots.meta.api.objects.commands.BotCommand;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardButton;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardRow;
 import org.telegram.telegrambots.meta.generics.TelegramClient;
 import uzelok.domain.exception.AttachmentTooLarge;
+import uzelok.domain.model.BotCommandEntry;
 import uzelok.domain.model.InlineKeyboard;
 import uzelok.domain.port.TelegramGateway;
 
@@ -124,6 +127,24 @@ public final class TelegramBotGateway implements TelegramGateway {
             return client.execute(document).getMessageId();
         } catch (org.telegram.telegrambots.meta.exceptions.TelegramApiException exception) {
             throw new TelegramDeliveryException("не удалось отправить документ в Telegram", exception);
+        }
+    }
+
+    @Override
+    public void setCommands(List<BotCommandEntry> commands) {
+        if (commands == null || commands.isEmpty()) {
+            return;
+        }
+        SetMyCommands method = SetMyCommands.builder()
+                .commands(commands.stream()
+                        .map(command -> new BotCommand(command.command(), command.description()))
+                        .toList())
+                .build();
+        try {
+            client.execute(method);
+        } catch (org.telegram.telegrambots.meta.exceptions.TelegramApiException exception) {
+            throw new TelegramDeliveryException(
+                    "не удалось установить меню команд в Telegram", exception);
         }
     }
 

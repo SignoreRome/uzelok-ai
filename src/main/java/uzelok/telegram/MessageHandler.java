@@ -5,6 +5,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -50,6 +51,16 @@ public final class MessageHandler {
 
     private static final Logger log = LoggerFactory.getLogger(MessageHandler.class);
     private static final long DUPLICATE_TOKEN_TTL_HOURS = 24;
+    private static final Duration UNKNOWN_CHAT_REPLY_INTERVAL = Duration.ofMinutes(10);
+    private static final int UNKNOWN_CHAT_CACHE_SIZE = 10_000;
+
+    private final Map<Long, Instant> unknownChatReplies =
+            new LinkedHashMap<>(16, 0.75f, true) {
+                @Override
+                protected boolean removeEldestEntry(Map.Entry<Long, Instant> eldest) {
+                    return size() > UNKNOWN_CHAT_CACHE_SIZE;
+                }
+            };
 
     private final AccessRepository access;
     private final KnowledgeBaseRepository bases;
@@ -120,8 +131,23 @@ public final class MessageHandler {
 
         Optional<ChatAccess> found = access.findByChatId(chatId);
         if (found.isEmpty()) {
+            // ТЗ UC-1 п.1: неизвестному чату — ответ «доступ не выдан», но не чаще раза в 10 минут,
+            // иначе бот превращается в эхо для любого chatId. Сбой доставки не должен уходить
+            // в роутер как ошибка обработки апдейта: ответ здесь — best-effort.
+            String reply = "throttled";
+            if (!unknownChatReplyThrottled(chatId)) {
+                reply = "failed";
+                try {
+                    telegram.sendMessage(chatId, messages.text("access.denied"), null);
+                    rememberUnknownChatReply(chatId);
+                    reply = "sent";
+                } catch (RuntimeException exception) {
+                    log.warn("не удалось ответить неизвестному чату chat_id={} exception={}",
+                            chatId, exception.getClass().getSimpleName());
+                }
+            }
             audit.record(new AuditRecord(null, chatId, "auth_denied", null, null,
-                    Map.of("reason", "unknown_chat")));
+                    Map.of("reason", "unknown_chat", "reply", reply)));
             return;
         }
 
@@ -318,6 +344,16 @@ public final class MessageHandler {
             jobs.postpone(creation.job().id(),
                     Instant.now(clock).plusMillis(telegramProps.mediaGroupWindowMs()));
         }
+    }
+
+    private synchronized boolean unknownChatReplyThrottled(long chatId) {
+        Instant last = unknownChatReplies.get(chatId);
+        return last != null
+                && Duration.between(last, clock.instant()).compareTo(UNKNOWN_CHAT_REPLY_INTERVAL) <= 0;
+    }
+
+    private synchronized void rememberUnknownChatReply(long chatId) {
+        unknownChatReplies.put(chatId, clock.instant());
     }
 
     private static String combineText(String text,
